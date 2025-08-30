@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"flag"
 	"html/template"
 	"log"
@@ -11,29 +12,8 @@ import (
 	"time"
 )
 
-const indexHTML = `<!doctype html>
-<html lang="pt-BR">
-<head>
-  <meta charset="utf-8">
-  <title>empreendedor.dev</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <style>
-    :root { font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, sans-serif; }
-    body { margin: 0; padding: 2rem; line-height: 1.45; }
-    .card { max-width: 720px; margin: auto; padding: 1.5rem; border: 1px solid #ddd; border-radius: 12px; }
-    h1 { margin-top: 0; }
-    code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
-    .muted { color: #666; font-size: 0.95rem; }
-  </style>
-</head>
-<body>
-  <main class="card">
-    <h1>empreendedor.dev</h1>
-	<p class="muted">Servido em: <code>{{.Path}}</code></p>
-    <p>Em breve, um site para reunir talentos de tecnologia.</p>
-  </main>
-</body>
-</html>`
+//go:embed assets/index.html
+var indexHTML string
 
 func securityHeaders(next http.Handler) http.Handler {
 	const csp = "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'"
