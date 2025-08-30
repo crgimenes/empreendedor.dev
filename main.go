@@ -76,21 +76,12 @@ func main() {
 	addrFlag := flag.String("addr", ":3210", "listen address (e.g. :3210)")
 	flag.Parse()
 
-	addr := *addrFlag
-	if addr == "" {
-		if p := os.Getenv("PORT"); p != "" {
-			addr = ":" + p
-		} else {
-			addr = ":8080"
-		}
-	}
-
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", indexHandler)
 	mux.HandleFunc("/healthz", healthHandler)
 
 	srv := &http.Server{
-		Addr:              addr,
+		Addr:              *addrFlag,
 		Handler:           securityHeaders(mux),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
@@ -100,8 +91,9 @@ func main() {
 
 	// Start server in a goroutine to enable graceful shutdown below.
 	go func() {
-		log.Printf("Serving on http://127.0.0.1%s …", addr)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Printf("Serving on %s", *addrFlag)
+		err := srv.ListenAndServe()
+		if err != nil && err != http.ErrServerClosed {
 			log.Fatalf("ListenAndServe error: %v", err)
 		}
 	}()
@@ -112,10 +104,13 @@ func main() {
 	<-stop
 
 	log.Println("Shutting down gracefully…")
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(
+		context.Background(),
+		5*time.Second)
 	defer cancel()
 
-	if err := srv.Shutdown(ctx); err != nil {
+	err := srv.Shutdown(ctx)
+	if err != nil {
 		log.Printf("Shutdown error: %v", err)
 	}
 	log.Println("Server stopped.")
