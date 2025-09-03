@@ -79,12 +79,11 @@ Thanks to the Brazilian **Go Study Group** community for years of discussion, co
 
 ## References
 
-- [Effective Go]: https://go.dev/doc/effective_go
-- [Go Modules – Managing Dependencies]: https://go.dev/doc/modules/managing-dependencies
-- [Code Review Comments]: https://github.com/golang/go/wiki/CodeReviewComments
-- [The Twelve‑Factor App]: https://12factor.net/
-- [OWASP Top Ten]: https://owasp.org/www-project-top-ten/
-- [GitHub Issues Guide]: https://docs.github.com/issues
+- [Effective Go](https://go.dev/doc/effective_go)
+- [Go Modules – Managing Dependencies](https://go.dev/doc/modules/managing-dependencies)
+- [Code Review Comments](https://github.com/golang/go/wiki/CodeReviewComments)
+- [OWASP Top Ten](https://owasp.org/www-project-top-ten/)
+- [GitHub Issues Guide](https://docs.github.com/issues)
 
 ---
 
