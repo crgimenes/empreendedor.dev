@@ -53,7 +53,8 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	addrFlag := flag.String("addr", ":3210", "listen address (e.g. :3210)")
+	addrFlag := flag.String(
+		"addr", ":3210", "listen address (e.g. :3210)")
 	flag.Parse()
 
 	mux := http.NewServeMux()
