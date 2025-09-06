@@ -3,17 +3,22 @@ package main
 import (
 	"context"
 	_ "embed"
-	"flag"
 	"html/template"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"time"
+
+	"github.com/crgimenes/empreendedor.dev/lua"
 )
 
-//go:embed assets/index.html
-var indexHTML string
+var (
+	//go:embed assets/index.html
+	indexHTML string
+	addrs     string
+)
 
 func securityHeaders(next http.Handler) http.Handler {
 	const csp = "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'"
@@ -52,19 +57,55 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte("ok\n"))
 }
 
+func fileExists(name string) bool {
+	_, err := os.Stat(name)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false
+		}
+		panic(err)
+	}
+	return true
+}
+
+func runLuaFile(name string) {
+	// Create a new Lua state.
+	L := lua.New()
+	defer L.Close()
+
+	L.SetGlobal("Address", ":3210")
+
+	// Read the Lua file.
+	b, err := os.ReadFile(filepath.Clean(name))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = L.DoString(string(b))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	addrs = L.MustGetString("Address")
+}
+
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
-	addrFlag := flag.String(
-		"addr", ":3210", "listen address (e.g. :3210)")
-	flag.Parse()
+	const initLua = "./init.lua"
+
+	if !fileExists(initLua) {
+		log.Fatal("init.lua not found")
+	}
+
+	runLuaFile(initLua)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", indexHandler)
 	mux.HandleFunc("/healthz", healthHandler)
 
 	srv := &http.Server{
-		Addr:              *addrFlag,
+		Addr:              addrs,
 		Handler:           securityHeaders(mux),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
@@ -74,7 +115,7 @@ func main() {
 
 	// Start server in a goroutine to enable graceful shutdown below.
 	go func() {
-		log.Printf("Serving on %s", *addrFlag)
+		log.Printf("Serving on %s", addrs)
 		err := srv.ListenAndServe()
 		if err != nil && err != http.ErrServerClosed {
 			log.Fatalf("ListenAndServe error: %v", err)
