@@ -18,6 +18,7 @@ var (
 	//go:embed assets/index.html
 	indexHTML string
 	addrs     string
+	GitTag    = "dev"
 )
 
 func securityHeaders(next http.Handler) http.Handler {
@@ -74,6 +75,7 @@ func runLuaFile(name string) {
 	defer L.Close()
 
 	L.SetGlobal("Address", ":3210")
+	L.SetGlobal("GitTag", GitTag)
 
 	// Read the Lua file.
 	b, err := os.ReadFile(filepath.Clean(name))
