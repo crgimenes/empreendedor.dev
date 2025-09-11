@@ -11,13 +11,14 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/crgimenes/empreendedor.dev/config"
 	"github.com/crgimenes/empreendedor.dev/lua"
+	"github.com/crgimenes/empreendedor.dev/session"
 )
 
 var (
 	//go:embed assets/index.html
 	indexHTML string
-	addrs     string
 	GitTag    = "dev"
 )
 
@@ -74,8 +75,11 @@ func runLuaFile(name string) {
 	L := lua.New()
 	defer L.Close()
 
-	L.SetGlobal("Address", ":3210")
+	L.SetGlobal("BaseURL", config.Cfg.BaseURL)
+	L.SetGlobal("Address", config.Cfg.Addrs)
 	L.SetGlobal("GitTag", GitTag)
+	L.SetGlobal("GitHubClientID", os.Getenv("GITHUB_CLIENT_ID"))
+	L.SetGlobal("GitHubClientSecret", os.Getenv("GITHUB_CLIENT_SECRET"))
 
 	// Read the Lua file.
 	b, err := os.ReadFile(filepath.Clean(name))
@@ -88,13 +92,16 @@ func runLuaFile(name string) {
 		log.Fatal(err)
 	}
 
-	addrs = L.MustGetString("Address")
+	config.Cfg.Addrs = L.MustGetString("Address")
+	config.Cfg.BaseURL = L.MustGetString("BaseURL")
+	config.Cfg.GitHubClientID = L.MustGetString("GitHubClientID")
+	config.Cfg.GitHubClientSecret = L.MustGetString("GitHubClientSecret")
 }
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
-	const initLua = "./init.lua"
+	const initLua = "init.lua"
 
 	if !fileExists(initLua) {
 		log.Fatal("init.lua not found")
@@ -107,7 +114,7 @@ func main() {
 	mux.HandleFunc("/healthz", healthHandler)
 
 	srv := &http.Server{
-		Addr:              addrs,
+		Addr:              config.Cfg.Addrs,
 		Handler:           securityHeaders(mux),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
@@ -117,10 +124,18 @@ func main() {
 
 	// Start server in a goroutine to enable graceful shutdown below.
 	go func() {
-		log.Printf("Serving on %s", addrs)
+		log.Printf("Serving on %s", config.Cfg.Addrs)
 		err := srv.ListenAndServe()
 		if err != nil && err != http.ErrServerClosed {
 			log.Fatalf("ListenAndServe error: %v", err)
+		}
+	}()
+
+	// session Cleanup
+	go func() {
+		for {
+			time.Sleep(5 * time.Minute)
+			session.Cleanup()
 		}
 	}()
 
