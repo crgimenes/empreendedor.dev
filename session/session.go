@@ -70,8 +70,7 @@ func Cleanup() {
 // Cookie helpers
 const sessCookie = "__Host-sid"
 
-// SetCookie sets a session cookie with the given value and max age.
-func SetCookie(w http.ResponseWriter, value string) {
+func SetCookie(w http.ResponseWriter, value string, maxAge time.Duration) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessCookie,
 		Value:    value,
@@ -79,8 +78,8 @@ func SetCookie(w http.ResponseWriter, value string) {
 		HttpOnly: true,
 		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
-		MaxAge:   int(MaxSessionAge),
-		Expires:  time.Now().Add(time.Duration(MaxSessionAge) * time.Second),
+		MaxAge:   int(maxAge.Seconds()),
+		Expires:  time.Now().Add(maxAge),
 	})
 }
 
