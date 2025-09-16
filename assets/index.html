@@ -1,129 +1,38 @@
 <!doctype html>
-<html lang="pt-BR">
-  <head>
-    <meta charset="utf-8" />
-    <title>empreendedor.dev</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <style>
-      :root {
-        --bg-canvas: #0d1117;
-        --bg-subtle: #161b22;
-        --border-default: #30363d;
-        --text-default: #e6edf3;
-        --text-muted: #8b949e;
-        --accent: #2f81f7;
-        --shadow: rgba(1, 4, 9, 0.3);
-        --radius: 6px;
-        --container-max: 720px;
-        --space: 24px;
-        --font-ui:
-          -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica,
-          Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
-        --font-mono:
-          ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono",
-          monospace;
-      }
-
-      html,
-      body {
-        height: 100%;
-      }
-      body {
-        margin: 0;
-        padding: var(--space);
-        line-height: 1.5;
-        background: var(--bg-canvas);
-        color: var(--text-default);
-        font-family: var(--font-ui);
-        -webkit-font-smoothing: antialiased;
-        -moz-osx-font-smoothing: grayscale;
-      }
-
-      a {
-        color: var(--accent);
-        text-decoration: none;
-      }
-      a:hover,
-      a:focus {
-        text-decoration: underline;
-      }
-
-      :focus-visible {
-        outline: 2px solid var(--accent);
-        outline-offset: 2px;
-        border-radius: 4px;
-      }
-
-      .card {
-        max-width: var(--container-max);
-        margin: 0 auto;
-        padding: calc(var(--space) * 0.75);
-        background: var(--bg-subtle);
-        border: 1px solid var(--border-default);
-        border-radius: var(--radius);
-        box-shadow: 0 8px 24px var(--shadow);
-      }
-
-      h1 {
-        margin: 0 0 0.5rem;
-        font-size: 1.5rem;
-        font-weight: 600;
-      }
-
-      code,
-      pre {
-        font-family: var(--font-mono);
-      }
-
-      code {
-        background: var(--bg-subtle);
-        color: var(--text-default);
-        border: 1px solid var(--border-default);
-        border-radius: 6px;
-        padding: 0.1rem 0.35rem;
-      }
-
-      pre {
-        background: var(--bg-subtle);
-        border: 1px solid var(--border-default);
-        border-radius: 6px;
-        padding: 0.75rem;
-        overflow: auto;
-      }
-      pre code {
-        border: 0;
-        padding: 0;
-      }
-
-      .muted {
-        color: var(--text-muted);
-        font-size: 0.95rem;
-      }
-
-      ::selection {
-        background: rgba(56, 139, 253, 0.4);
-        color: inherit;
-      }
-
-      @media (prefers-color-scheme: light) {
-        :root {
-          --bg-canvas: #f6f8fa;
-          --bg-subtle: #ffffff;
-          --border-default: #d0d7de;
-          --text-default: #1f2328;
-          --text-muted: #656d76;
-          --accent: #0969da;
-          --shadow: rgba(140, 149, 159, 0.3);
-        }
-      }
-    </style>
-  </head>
-  <body>
-    <main class="card">
-      <h1>empreendedor.dev</h1>
-      <p class="muted">Servido em: <code>{{.Path}}</code></p>
-      <p>Em breve, um site para reunir talentos de tecnologia.</p>
-    </main>
-  </body>
-</html>
+<meta charset="utf-8" />
+<title>Empreendedor Dev</title>
+<style>
+  body {
+    font-family: system-ui;
+    margin: 24px;
+  }
+  img {
+    border-radius: 8px;
+  }
+  .card {
+    border: 1px solid #ccc;
+    padding: 16px;
+    border-radius: 12px;
+    max-width: 520px;
+  }
+  .btn {
+    display: inline-block;
+    padding: 8px 12px;
+    border: 1px solid #333;
+    border-radius: 8px;
+    text-decoration: none;
+    margin: 4px 0;
+  }
+</style>
+<div class="card">
+  <h2>Demo: Login with GitHub</h2>
+  {{if .Authed}}
+  <h3>Welcome, {{.User.Name}} (@{{.User.Login}})</h3>
+  <p><img src="{{.User.AvatarURL}}" alt="avatar" width="96" height="96" /></p>
+  <p><a class="btn" href="/me">View JSON</a></p>
+  <p><a class="btn" href="/logout">Logout</a></p>
+  {{else}}
+  <p><a class="btn" href="/login">Login with GitHub</a></p>
+  {{end}}
+</div>
 
