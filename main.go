@@ -3,25 +3,43 @@ package main
 import (
 	"context"
 	_ "embed"
+	"encoding/json"
+	"fmt"
 	"html/template"
+	"io"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/crgimenes/empreendedor.dev/config"
 	"github.com/crgimenes/empreendedor.dev/lua"
 	"github.com/crgimenes/empreendedor.dev/session"
+	"github.com/crgimenes/empreendedor.dev/user"
+	"github.com/crgimenes/empreendedor.dev/utils"
+	"golang.org/x/oauth2"
 )
+
+type stateEntry struct {
+	Verifier string
+	Expires  time.Time
+}
 
 var (
 	//go:embed assets/index.html
 	indexHTML string
 	GitTag    = "dev"
+	states    = struct {
+		sync.Mutex
+		m map[string]stateEntry
+	}{m: make(map[string]stateEntry)}
 )
 
+/*
 func securityHeaders(next http.Handler) http.Handler {
 	const csp = "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'"
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -32,24 +50,47 @@ func securityHeaders(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
+*/
+
+func securityHeaders(next http.Handler) http.Handler {
+	csp := strings.Join([]string{
+		"default-src 'self'",
+		"img-src 'self' data: https: *.githubusercontent.com github.com",
+		"style-src 'self' 'unsafe-inline'",
+		"frame-ancestors 'none'",
+	}, "; ")
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("Content-Security-Policy", csp)
+
+		next.ServeHTTP(w, r)
+	})
+}
 
 func indexHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-
-	tpl, err := template.New("index").Parse(indexHTML)
-	if err != nil {
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
+	w.Header().Set("Cache-Control", "no-store")
+	sid, ok := session.GetCookie(r)
+	var u user.User
+	authed := false
+	if ok {
+		if got, ok := session.Get(sid); ok {
+			u, authed = got, true
+		}
 	}
+	data := struct {
+		Authed bool
+		User   user.User
+	}{Authed: authed, User: u}
 
-	path := r.URL.Path
+	indexTpl := template.Must(template.New("index").Parse(indexHTML))
 
-	err = tpl.Execute(w, struct {
-		Path string
-	}{Path: path})
+	err := indexTpl.Execute(w, data)
 	if err != nil {
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
+		log.Printf("template execute error: %v", err)
+		http.Error(w, "template error", http.StatusInternalServerError)
 	}
 }
 
@@ -98,6 +139,164 @@ func runLuaFile(name string) {
 	config.Cfg.GitHubClientSecret = L.MustGetString("GitHubClientSecret")
 }
 
+func putState(st, verifier string, ttl time.Duration) {
+	states.Lock()
+	states.m[st] = stateEntry{Verifier: verifier, Expires: time.Now().Add(ttl)}
+	// simple opportunistic cleanup:
+	for k, v := range states.m {
+		if time.Now().After(v.Expires) {
+			delete(states.m, k)
+		}
+	}
+	states.Unlock()
+}
+
+func takeState(st string) (string, bool) {
+	states.Lock()
+	defer func() {
+		delete(states.m, st)
+		states.Unlock()
+	}()
+	ent, ok := states.m[st]
+	if !ok || time.Now().After(ent.Expires) {
+		return "", false
+	}
+	return ent.Verifier, true
+}
+
+func oauthConfig() *oauth2.Config {
+	return &oauth2.Config{
+		ClientID:     config.Cfg.GitHubClientID,
+		ClientSecret: config.Cfg.GitHubClientSecret,
+		RedirectURL:  config.Cfg.BaseURL + "/github/oauth/callback",
+		Scopes:       []string{"read:user", "user:email"},
+		Endpoint: oauth2.Endpoint{
+			AuthURL:  "https://github.com/login/oauth/authorize",
+			TokenURL: "https://github.com/login/oauth/access_token",
+		},
+	}
+}
+
+func loginHandler(w http.ResponseWriter, r *http.Request) {
+	// Generate state + PKCE; keep both server-side with TTL.
+	state := utils.NewOpaqueID()
+	verifier, challenge := utils.MakePKCE()
+	putState(state, verifier, 10*time.Minute)
+
+	oc := oauthConfig()
+	authURL := oc.AuthCodeURL(
+		state,
+		oauth2.SetAuthURLParam("code_challenge", challenge),
+		oauth2.SetAuthURLParam("code_challenge_method", "S256"),
+	)
+	http.Redirect(w, r, authURL, http.StatusFound)
+}
+
+func logoutHandler(w http.ResponseWriter, r *http.Request) {
+	if sid, ok := session.GetCookie(r); ok {
+		session.Del(sid)
+	}
+	session.SetCookie(w, "", -1) // clear cookie
+	http.Redirect(w, r, config.Cfg.BaseURL+"/", http.StatusFound)
+}
+
+func meHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	sid, ok := session.GetCookie(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	u, ok := session.Get(sid)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(u)
+}
+
+func callbackHandler(w http.ResponseWriter, r *http.Request) {
+	recvState := r.URL.Query().Get("state")
+	if recvState == "" {
+		http.Error(w, "missing state", http.StatusBadRequest)
+		return
+	}
+	verifier, ok := takeState(recvState)
+	if !ok {
+		http.Error(w, "invalid/expired state", http.StatusBadRequest)
+		return
+	}
+	code := r.URL.Query().Get("code")
+	if code == "" {
+		http.Error(w, "missing code", http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	oc := oauthConfig()
+
+	tok, err := oc.Exchange(ctx, code, oauth2.SetAuthURLParam("code_verifier", verifier))
+	if err != nil {
+		http.Error(w, "token exchange failed: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	client := oc.Client(ctx, tok)
+	req, _ := http.NewRequestWithContext(ctx, "GET", "https://api.github.com/user", nil)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		http.Error(w, "github /user failed: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		http.Error(w,
+			fmt.Sprintf(
+				"user endpoint status %d: %s",
+				resp.StatusCode,
+				string(b)),
+			http.StatusBadGateway)
+		return
+	}
+
+	var gu struct {
+		ID        int64  `json:"id"`
+		Login     string `json:"login"`
+		Name      string `json:"name"`
+		AvatarURL string `json:"avatar_url"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&gu); err != nil {
+		http.Error(w, "decode user failed", http.StatusBadGateway)
+		return
+	}
+
+	if gu.ID == 0 || gu.Login == "" {
+		http.Error(w, "invalid user data", http.StatusBadGateway)
+		return
+	}
+
+	log.Printf("logged in user: ID=%d, Login=%s, Name=%s, AvatarURL=%s",
+		gu.ID, gu.Login, gu.Name, gu.AvatarURL)
+
+	// Create server-side session and set SID cookie
+	sid := utils.NewOpaqueID()
+	session.Put(sid, user.User{
+		ID:        fmt.Sprintf("%d", gu.ID),
+		Login:     gu.Login,
+		Name:      gu.Name,
+		AvatarURL: gu.AvatarURL,
+	})
+	session.SetCookie(w, sid, 8*time.Hour)
+
+	http.Redirect(w, r, config.Cfg.BaseURL+"/", http.StatusFound)
+}
+
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
@@ -112,6 +311,12 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", indexHandler)
 	mux.HandleFunc("/healthz", healthHandler)
+
+	mux.HandleFunc("/login", loginHandler)
+	mux.HandleFunc("/logout", logoutHandler)
+	mux.HandleFunc("/me", meHandler)
+
+	mux.HandleFunc("/github/oauth/callback", callbackHandler)
 
 	srv := &http.Server{
 		Addr:              config.Cfg.Addrs,
