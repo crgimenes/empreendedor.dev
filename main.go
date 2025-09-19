@@ -137,6 +137,12 @@ func runLuaFile(name string) {
 	config.Cfg.BaseURL = L.MustGetString("BaseURL")
 	config.Cfg.GitHubClientID = L.MustGetString("GitHubClientID")
 	config.Cfg.GitHubClientSecret = L.MustGetString("GitHubClientSecret")
+
+	if config.Cfg.GitHubClientID == "" ||
+		config.Cfg.GitHubClientSecret == "" {
+		log.Fatal("GitHubClientID and GitHubClientSecret must be set")
+	}
+
 }
 
 func putState(st, verifier string, ttl time.Duration) {
