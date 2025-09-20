@@ -228,7 +228,7 @@ func meHandler(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(u)
 }
 
-func callbackHandler(w http.ResponseWriter, r *http.Request) {
+func githubCallbackHandler(w http.ResponseWriter, r *http.Request) {
 	recvState := r.URL.Query().Get("state")
 	if recvState == "" {
 		http.Error(w, "missing state", http.StatusBadRequest)
@@ -309,6 +309,9 @@ func callbackHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, config.Cfg.BaseURL+"/", http.StatusFound)
 }
 
+func xCallbackHandler(w http.ResponseWriter, r *http.Request) {
+}
+
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
@@ -328,7 +331,8 @@ func main() {
 	mux.HandleFunc("/logout", logoutHandler)
 	mux.HandleFunc("/me", meHandler)
 
-	mux.HandleFunc("/github/oauth/callback", callbackHandler)
+	mux.HandleFunc("/github/oauth/callback", githubCallbackHandler)
+	mux.HandleFunc("/x/oauth/callback", xCallbackHandler)
 
 	srv := &http.Server{
 		Addr:              config.Cfg.Addrs,
