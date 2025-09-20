@@ -175,7 +175,7 @@ func oauthConfig() *oauth2.Config {
 		ClientID:     config.Cfg.GitHubClientID,
 		ClientSecret: config.Cfg.GitHubClientSecret,
 		RedirectURL:  config.Cfg.BaseURL + "/github/oauth/callback",
-		Scopes:       []string{"read:user", "user:email"},
+		Scopes:       []string{"read:user"},
 		Endpoint: oauth2.Endpoint{
 			AuthURL:  "https://github.com/login/oauth/authorize",
 			TokenURL: "https://github.com/login/oauth/access_token",
