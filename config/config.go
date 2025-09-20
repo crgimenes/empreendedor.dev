@@ -6,12 +6,12 @@ type Config struct {
 	GitHubClientID     string
 	GitHubClientSecret string
 	GitTag             string
+	XClientID          string
+	XClientSecret      string
 }
 
 var Cfg = &Config{
-	Addrs:              ":3210",
-	BaseURL:            "https://empreendedor.dev",
-	GitHubClientID:     "",
-	GitHubClientSecret: "",
-	GitTag:             "dev",
+	Addrs:   ":3210",
+	BaseURL: "https://empreendedor.dev",
+	GitTag:  "dev",
 }

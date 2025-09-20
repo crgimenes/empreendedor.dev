@@ -121,6 +121,8 @@ func runLuaFile(name string) {
 	L.SetGlobal("GitTag", GitTag)
 	L.SetGlobal("GitHubClientID", os.Getenv("GITHUB_CLIENT_ID"))
 	L.SetGlobal("GitHubClientSecret", os.Getenv("GITHUB_CLIENT_SECRET"))
+	L.SetGlobal("XClientID", os.Getenv("X_CLIENT_ID"))
+	L.SetGlobal("XClientSecret", os.Getenv("X_CLIENT_SECRET"))
 
 	// Read the Lua file.
 	b, err := os.ReadFile(filepath.Clean(name))
@@ -137,10 +139,14 @@ func runLuaFile(name string) {
 	config.Cfg.BaseURL = L.MustGetString("BaseURL")
 	config.Cfg.GitHubClientID = L.MustGetString("GitHubClientID")
 	config.Cfg.GitHubClientSecret = L.MustGetString("GitHubClientSecret")
+	config.Cfg.XClientID = L.MustGetString("XClientID")
+	config.Cfg.XClientSecret = L.MustGetString("XClientSecret")
 
 	if config.Cfg.GitHubClientID == "" ||
-		config.Cfg.GitHubClientSecret == "" {
-		log.Fatal("GitHubClientID and GitHubClientSecret must be set")
+		config.Cfg.GitHubClientSecret == "" ||
+		config.Cfg.XClientID == "" ||
+		config.Cfg.XClientSecret == "" {
+		log.Fatal("Missing OAuth2 client ID/secret in environment variables")
 	}
 
 }
