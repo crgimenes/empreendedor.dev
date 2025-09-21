@@ -39,19 +39,6 @@ var (
 	}{m: make(map[string]stateEntry)}
 )
 
-/*
-func securityHeaders(next http.Handler) http.Handler {
-	const csp = "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'"
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("X-Frame-Options", "DENY")
-		w.Header().Set("Referrer-Policy", "no-referrer")
-		w.Header().Set("Content-Security-Policy", csp)
-		next.ServeHTTP(w, r)
-	})
-}
-*/
-
 func securityHeaders(next http.Handler) http.Handler {
 	csp := strings.Join([]string{
 		"default-src 'self'",
@@ -193,12 +180,12 @@ func gitHubOAuthConfig() *oauth2.Config {
 func xOAuthConfig() *oauth2.Config {
 	return &oauth2.Config{
 		ClientID:     config.Cfg.XClientID,
-		ClientSecret: config.Cfg.XClientSecret, // se estiver usando "public client", deixe vazio
+		ClientSecret: config.Cfg.XClientSecret,
 		RedirectURL:  config.Cfg.BaseURL + "/x/oauth/callback",
-		Scopes:       []string{"users.read"},
+		Scopes:       []string{"tweet.read", "users.read"},
 		Endpoint: oauth2.Endpoint{
-			AuthURL:  "https://x.com/i/oauth2/authorize",
-			TokenURL: "https://api.x.com/2/oauth2/token",
+			AuthURL:  "https://twitter.com/i/oauth2/authorize",
+			TokenURL: "https://api.twitter.com/2/oauth2/token",
 		},
 	}
 }
@@ -218,7 +205,6 @@ func loginGitHubHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, authURL, http.StatusFound)
 }
 
-// Login com X (rota separada para evitar mudar o fluxo já usado pelo GitHub)
 func loginXHandler(w http.ResponseWriter, r *http.Request) {
 	state := utils.NewOpaqueID()
 	verifier, challenge := utils.MakePKCE()
@@ -294,7 +280,11 @@ func githubCallbackHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "github /user failed: "+err.Error(), http.StatusBadGateway)
 		return
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Printf("Error closing response body: %v", err)
+		}
+	}()
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		http.Error(w,
@@ -312,7 +302,8 @@ func githubCallbackHandler(w http.ResponseWriter, r *http.Request) {
 		Name      string `json:"name"`
 		AvatarURL string `json:"avatar_url"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&gu); err != nil {
+	err = json.NewDecoder(resp.Body).Decode(&gu)
+	if err != nil {
 		http.Error(w, "decode user failed", http.StatusBadGateway)
 		return
 	}
@@ -365,9 +356,13 @@ func xCallbackHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// GET /2/users/me?user.fields=profile_image_url
 	client := oc.Client(ctx, tok)
-	req, _ := http.NewRequestWithContext(ctx, "GET", "https://api.x.com/2/users/me?user.fields=profile_image_url", nil)
+	req, _ := http.NewRequestWithContext(
+		ctx,
+		http.MethodGet,
+		"https://api.x.com/2/users/me?user.fields=profile_image_url",
+		nil,
+	)
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := client.Do(req)
@@ -375,7 +370,71 @@ func xCallbackHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "x /2/users/me failed: "+err.Error(), http.StatusBadGateway)
 		return
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Printf("Error closing response body: %v", err)
+		}
+	}()
+
+	// if API v2 fails with 403, try API v1.1 as fallback
+	if resp.StatusCode == http.StatusForbidden {
+		log.Printf("API v2 retornou 403, tentando fallback para API v1.1")
+
+		req, _ = http.NewRequestWithContext(ctx, "GET", "https://api.x.com/1.1/account/verify_credentials.json", nil)
+		req.Header.Set("Accept", "application/json")
+
+		resp, err = client.Do(req)
+		if err != nil {
+			http.Error(w, "x verify_credentials failed: "+err.Error(), http.StatusBadGateway)
+			return
+		}
+		defer func() {
+			if err := resp.Body.Close(); err != nil {
+				log.Printf("Error closing response body: %v", err)
+			}
+		}()
+
+		if resp.StatusCode != http.StatusOK {
+			b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+			http.Error(w,
+				fmt.Sprintf("verify_credentials status %d: %s", resp.StatusCode, string(b)),
+				http.StatusBadGateway)
+			return
+		}
+
+		// Parse response from API v1.1 (diferent structure)
+		var xuLegacy struct {
+			ID              string `json:"id_str"`
+			ScreenName      string `json:"screen_name"`
+			Name            string `json:"name"`
+			ProfileImageURL string `json:"profile_image_url_https"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&xuLegacy); err != nil {
+			http.Error(w, "decode user failed", http.StatusBadGateway)
+			return
+		}
+
+		if xuLegacy.ID == "" || xuLegacy.ScreenName == "" {
+			http.Error(w, "invalid user data", http.StatusBadGateway)
+			return
+		}
+
+		log.Printf("logged in X user (API v1.1): ID=%s, Username=%s, Name=%s, AvatarURL=%s",
+			xuLegacy.ID, xuLegacy.ScreenName, xuLegacy.Name, xuLegacy.ProfileImageURL)
+
+		// Create server-side session and set SID cookie usando dados da API v1.1
+		sid := utils.NewOpaqueID()
+		session.Put(sid, user.User{
+			ID:        xuLegacy.ID,
+			Login:     xuLegacy.ScreenName,
+			Name:      xuLegacy.Name,
+			AvatarURL: xuLegacy.ProfileImageURL,
+		})
+		session.SetCookie(w, sid, 8*time.Hour)
+		http.Redirect(w, r, config.Cfg.BaseURL+"/", http.StatusFound)
+		return
+	}
+
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		http.Error(w,
@@ -419,7 +478,7 @@ func xCallbackHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	log.SetFlags(log.LstdFlags | log.Llongfile)
 
 	const initLua = "init.lua"
 
