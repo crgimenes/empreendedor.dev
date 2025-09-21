@@ -5,8 +5,13 @@ if _G.GitTag == nil then
     GitTag = ""
 end
 
-if _G.BaseURL == nil then
-    BaseURL = "http://localhost:3210"
+do
+    local envBase = os.getenv("BASE_URL")
+    if envBase ~= nil and envBase ~= "" then
+        BaseURL = envBase
+    elseif _G.BaseURL == nil then
+        BaseURL = "http://localhost:3210"
+    end
 end
 
 local function getEnv(name, default)
@@ -23,4 +28,3 @@ GitHubClientSecret = getEnv("GITHUB_CLIENT_SECRET", "")
 
 print("Version: " .. GitTag)
 print("BaseURL: " .. BaseURL)
-

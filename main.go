@@ -64,9 +64,10 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	data := struct {
-		Authed bool
-		User   user.User
-	}{Authed: authed, User: u}
+		Authed           bool
+		User             user.User
+		FakeOAuthEnabled bool
+	}{Authed: authed, User: u, FakeOAuthEnabled: config.Cfg.FakeOAuthEnabled}
 
 	indexTpl := template.Must(template.New("index").Parse(indexHTML))
 
@@ -125,11 +126,14 @@ func runLuaFile(name string) {
 	config.Cfg.XClientID = L.MustGetString("XClientID")
 	config.Cfg.XClientSecret = L.MustGetString("XClientSecret")
 
-	if config.Cfg.GitHubClientID == "" ||
-		config.Cfg.GitHubClientSecret == "" ||
-		config.Cfg.XClientID == "" ||
-		config.Cfg.XClientSecret == "" {
-		log.Fatal("Missing OAuth2 client ID/secret in environment variables")
+	// Allow missing real providers if fake OAuth is enabled (for local tests).
+	if !config.Cfg.FakeOAuthEnabled {
+		if config.Cfg.GitHubClientID == "" ||
+			config.Cfg.GitHubClientSecret == "" ||
+			config.Cfg.XClientID == "" ||
+			config.Cfg.XClientSecret == "" {
+			log.Fatal("Missing OAuth2 client ID/secret in environment variables")
+		}
 	}
 
 }
@@ -163,6 +167,7 @@ func takeState(st string) (string, bool) {
 var (
 	gitHubProvider = GitHubProvider{}
 	xProvider      = XProvider{}
+	fakeProvider   = FakeProvider{}
 )
 
 func logoutHandler(w http.ResponseWriter, r *http.Request) {
@@ -200,7 +205,28 @@ func main() {
 		log.Fatal("init.lua not found")
 	}
 
+	if envBase := os.Getenv("BASE_URL"); envBase != "" {
+		config.Cfg.BaseURL = envBase
+	}
 	runLuaFile(initLua)
+
+	// Read fake OAuth env vars (simple optional integration).
+	if os.Getenv("FAKE_OAUTH_ENABLED") == "true" {
+		config.Cfg.FakeOAuthEnabled = true
+		session.EnableInsecureCookie()
+		config.Cfg.FakeOAuthBaseURL = os.Getenv("FAKE_OAUTH_BASE_URL")
+		config.Cfg.FakeOAuthClientID = os.Getenv("FAKE_OAUTH_CLIENT_ID")
+		config.Cfg.FakeOAuthRedirect = os.Getenv("FAKE_OAUTH_REDIRECT_PATH")
+		if config.Cfg.FakeOAuthRedirect == "" {
+			config.Cfg.FakeOAuthRedirect = "/fake/oauth/callback"
+		}
+		if config.Cfg.FakeOAuthBaseURL == "" {
+			config.Cfg.FakeOAuthBaseURL = "http://127.0.0.1:9100"
+		}
+		if config.Cfg.FakeOAuthClientID == "" {
+			config.Cfg.FakeOAuthClientID = "fake-client-id"
+		}
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", indexHandler)
@@ -208,6 +234,10 @@ func main() {
 
 	mux.HandleFunc("/login/github", gitHubProvider.LoginHandler)
 	mux.HandleFunc("/login/x", xProvider.LoginHandler)
+	if config.Cfg.FakeOAuthEnabled {
+		mux.HandleFunc("/login/fake", fakeProvider.LoginHandler)
+		mux.HandleFunc(config.Cfg.FakeOAuthRedirect, fakeProvider.CallbackHandler)
+	}
 	mux.HandleFunc("/logout", logoutHandler)
 	mux.HandleFunc("/me", meHandler)
 

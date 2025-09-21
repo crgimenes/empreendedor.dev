@@ -68,15 +68,31 @@ func Cleanup() {
 // ===== Cookie helpers =====
 
 // Cookie helpers
-const sessCookie = "__Host-sid"
+// In secure (default) mode we use the __Host- prefix which requires Secure=true, Path=/ and no Domain.
+// When insecureCookie is enabled (local dev over http) we must NOT use the __Host- prefix because
+// browsers will silently reject a cookie whose name starts with __Host- if Secure is false.
+const (
+	secureSessCookieName   = "__Host-sid"
+	insecureSessCookieName = "sid"
+)
+
+var insecureCookie bool
+
+// EnableInsecureCookie enables non-Secure cookies (DEV/TEST only). Not for production use.
+func EnableInsecureCookie() { insecureCookie = true }
 
 func SetCookie(w http.ResponseWriter, value string, maxAge time.Duration) {
+	secure := !insecureCookie
+	name := secureSessCookieName
+	if !secure {
+		name = insecureSessCookieName
+	}
 	http.SetCookie(w, &http.Cookie{
-		Name:     sessCookie,
+		Name:     name,
 		Value:    value,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   int(maxAge.Seconds()),
 		Expires:  time.Now().Add(maxAge),
@@ -84,7 +100,11 @@ func SetCookie(w http.ResponseWriter, value string, maxAge time.Duration) {
 }
 
 func GetCookie(r *http.Request) (string, bool) {
-	c, err := r.Cookie(sessCookie)
+	name := secureSessCookieName
+	if insecureCookie {
+		name = insecureSessCookieName
+	}
+	c, err := r.Cookie(name)
 	if err != nil {
 		return "", false
 	}

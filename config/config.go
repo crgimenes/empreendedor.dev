@@ -8,6 +8,10 @@ type Config struct {
 	GitTag             string
 	XClientID          string
 	XClientSecret      string
+	FakeOAuthBaseURL   string
+	FakeOAuthClientID  string
+	FakeOAuthRedirect  string
+	FakeOAuthEnabled   bool
 }
 
 var Cfg = &Config{
