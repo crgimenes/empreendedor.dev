@@ -1,236 +1,253 @@
 <!doctype html>
-<html lang="pt-br">
-  <head>
-    <meta charset="utf-8" />
-    <title>Login – GitHub ou X</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <!-- Minimal inline CSS only for layout/clarity -->
-    <style>
-      :root {
-        --bg: #0f1216;
-        --card: #161b22;
-        --text: #e6edf3;
-        --muted: #9ba3af;
-        --accent: #2f81f7; /* GitHub-ish blue */
-        --accent2: #1d9bf0; /* X blue */
-        --danger: #f85149;
-        --ok: #2ea043;
-        --radius: 16px;
-      }
-      html,
-      body {
-        height: 100%;
-      }
-      body {
-        margin: 0;
-        background: var(--bg);
-        color: var(--text);
-        font:
-          16px/1.5 system-ui,
-          -apple-system,
-          Segoe UI,
-          Roboto,
-          Ubuntu,
-          Cantarell,
-          "Helvetica Neue",
-          Arial,
-          "Noto Sans",
-          "Apple Color Emoji",
-          "Segoe UI Emoji",
-          "Segoe UI Symbol";
-        display: grid;
-        place-items: center;
-      }
-      .container {
-        width: min(820px, 92vw);
-        padding: 24px;
-      }
-      .card {
-        background: var(--card);
-        border: 1px solid #30363d;
-        border-radius: var(--radius);
-        padding: 24px;
-        box-shadow: 0 6px 30px rgba(0, 0, 0, 0.25);
-      }
-      h1,
-      h2,
-      h3 {
-        margin: 0 0 12px;
-      }
-      p {
-        margin: 8px 0 0;
-        color: var(--muted);
-      }
-      .grid {
-        display: grid;
-        gap: 16px;
-      }
-      .grid-2 {
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      }
-      .btn {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        gap: 10px;
-        height: 46px;
-        padding: 0 16px;
-        border: 1px solid #30363d;
-        border-radius: 12px;
-        text-decoration: none;
-        color: var(--text);
-        background: transparent;
-        transition:
-          transform 0.05s ease,
-          background 0.2s ease,
-          border-color 0.2s ease;
-        user-select: none;
-        cursor: pointer;
-      }
-      .btn:active {
-        transform: translateY(1px);
-      }
-      .btn:hover {
-        border-color: #3d444d;
-        background: rgba(255, 255, 255, 0.02);
-      }
-      .btn-gh {
-        border-color: rgba(47, 129, 247, 0.35);
-      }
-      .btn-gh:hover {
-        background: rgba(47, 129, 247, 0.12);
-      }
-      .btn-x {
-        border-color: rgba(29, 155, 240, 0.35);
-      }
-      .btn-x:hover {
-        background: rgba(29, 155, 240, 0.12);
-      }
-      .btn-logout {
-        border-color: rgba(248, 81, 73, 0.35);
-      }
-      .btn-logout:hover {
-        background: rgba(248, 81, 73, 0.12);
-      }
-      .row {
-        display: flex;
-        align-items: center;
-        gap: 16px;
-        flex-wrap: wrap;
-      }
-      .avatar {
-        width: 72px;
-        height: 72px;
-        border-radius: 50%;
-        border: 1px solid #30363d;
-        object-fit: cover;
-        background: #0b0e12;
-      }
-      .meta {
-        color: var(--muted);
-        font-size: 14px;
-      }
-      .kbd {
-        font-family:
-          ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-          "Liberation Mono", monospace;
-        font-size: 12px;
-        background: #0b0e12;
-        border: 1px solid #30363d;
-        border-bottom-width: 2px;
-        padding: 2px 6px;
-        border-radius: 8px;
-        color: var(--text);
-      }
-      .footer {
-        margin-top: 18px;
-        color: var(--muted);
-        font-size: 13px;
-        text-align: center;
-      }
-    </style>
-  </head>
-  <body>
-    <div class="container">
-      {{if .Authed}}
-      <!-- Authenticated view -->
-      <div class="card grid">
-        <div class="row">
-          <img class="avatar" src="{{.User.AvatarURL}}" alt="User avatar" />
-          <div>
-            <h2>
-              Bem-vindo, {{if
-              .User.Name}}{{.User.Name}}{{else}}{{.User.Login}}{{end}}!
-            </h2>
-            <div class="meta">
-              <div><strong>ID:</strong> {{.User.ID}}</div>
-              {{if .User.Login}}
-              <div><strong>Login:</strong> {{.User.Login}}</div>
-              {{end}}
-            </div>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="utf-8" />
+  <title>Login – GitHub ou X</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Minimal inline CSS only for layout/clarity -->
+  <style>
+    :root {
+      --bg: #0f1216;
+      --card: #161b22;
+      --text: #e6edf3;
+      --muted: #9ba3af;
+      --accent: #2f81f7;
+      /* GitHub-ish blue */
+      --accent2: #1d9bf0;
+      /* X blue */
+      --danger: #f85149;
+      --ok: #2ea043;
+      --radius: 16px;
+    }
+
+    html,
+    body {
+      height: 100%;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font:
+        16px/1.5 system-ui,
+        -apple-system,
+        Segoe UI,
+        Roboto,
+        Ubuntu,
+        Cantarell,
+        "Helvetica Neue",
+        Arial,
+        "Noto Sans",
+        "Apple Color Emoji",
+        "Segoe UI Emoji",
+        "Segoe UI Symbol";
+      display: grid;
+      place-items: center;
+    }
+
+    .container {
+      width: min(820px, 92vw);
+      padding: 24px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid #30363d;
+      border-radius: var(--radius);
+      padding: 24px;
+      box-shadow: 0 6px 30px rgba(0, 0, 0, 0.25);
+    }
+
+    h1,
+    h2,
+    h3 {
+      margin: 0 0 12px;
+    }
+
+    p {
+      margin: 8px 0 0;
+      color: var(--muted);
+    }
+
+    .grid {
+      display: grid;
+      gap: 16px;
+    }
+
+    .grid-2 {
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      height: 46px;
+      padding: 0 16px;
+      border: 1px solid #30363d;
+      border-radius: 12px;
+      text-decoration: none;
+      color: var(--text);
+      background: transparent;
+      transition:
+        transform 0.05s ease,
+        background 0.2s ease,
+        border-color 0.2s ease;
+      user-select: none;
+      cursor: pointer;
+    }
+
+    .btn:active {
+      transform: translateY(1px);
+    }
+
+    .btn:hover {
+      border-color: #3d444d;
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .btn-gh {
+      border-color: rgba(47, 129, 247, 0.35);
+    }
+
+    .btn-gh:hover {
+      background: rgba(47, 129, 247, 0.12);
+    }
+
+    .btn-x {
+      border-color: rgba(29, 155, 240, 0.35);
+    }
+
+    .btn-x:hover {
+      background: rgba(29, 155, 240, 0.12);
+    }
+
+    .btn-logout {
+      border-color: rgba(248, 81, 73, 0.35);
+    }
+
+    .btn-logout:hover {
+      background: rgba(248, 81, 73, 0.12);
+    }
+
+    .row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .avatar {
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      border: 1px solid #30363d;
+      object-fit: cover;
+      background: #0b0e12;
+    }
+
+    .meta {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .kbd {
+      font-family:
+        ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+        "Liberation Mono", monospace;
+      font-size: 12px;
+      background: #0b0e12;
+      border: 1px solid #30363d;
+      border-bottom-width: 2px;
+      padding: 2px 6px;
+      border-radius: 8px;
+      color: var(--text);
+    }
+
+    .footer {
+      margin-top: 18px;
+      color: var(--muted);
+      font-size: 13px;
+      text-align: center;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    {{if .Authed}}
+    <!-- Authenticated view -->
+    <div class="card grid">
+      <div class="row">
+        <img class="avatar" src="{{.User.AvatarURL}}" alt="User avatar" />
+        <div>
+          <h2>
+            Bem-vindo, {{if .User.Name}}{{.User.Name}}{{else}}{{.User.Login}}{{end}}!
+          </h2>
+          <div class="meta">
+            <div><strong>ID:</strong> {{.User.ID}}</div>
+            {{if .User.Login}}
+            <div><strong>Login:</strong> {{.User.Login}}</div>
+            {{end}}
           </div>
         </div>
-
-        <div class="row">
-          <a class="btn btn-logout" href="/logout" rel="nofollow">Sair</a>
-          <a class="btn" href="/me" rel="nofollow" title="Ver JSON da sessão">
-            <span class="kbd">GET</span> <strong>/me</strong>
-          </a>
-        </div>
-
-        <p>
-          Você está autenticado. Use o endpoint
-          <span class="kbd">/me</span> para inspecionar os dados de sessão.
-        </p>
       </div>
 
-      {{else}}
-      <!-- Unauthenticated view -->
-      <div class="card grid">
-        <h1>Autenticação</h1>
-        <p>Escolha um provedor para entrar:</p>
-
-        <div class="grid grid-2" style="margin-top: 8px">
-          <!-- Login with GitHub -->
-          <a class="btn btn-gh" href="/login/github" rel="nofollow">
-            <!-- Simple SVG icon (GitHub) -->
-            <svg
-              aria-hidden="true"
-              width="18"
-              height="18"
-              viewBox="0 0 16 16"
-              fill="currentColor"
-            >
-              <path
-                d="M8 0C3.58 0 0 3.68 0 8.22c0 3.63 2.29 6.71 5.47 7.79.4.08.55-.18.55-.39 0-.19-.01-.82-.01-1.49-2 .37-2.53-.5-2.69-.96-.09-.24-.48-.96-.82-1.16-.28-.15-.68-.52-.01-.53.63-.01 1.08.6 1.23.85.72 1.21 1.87.87 2.33.66.07-.54.28-.87.51-1.07-1.78-.21-3.64-.92-3.64-4.1 0-.91.31-1.65.82-2.23-.08-.2-.36-1.03.08-2.14 0 0 .67-.22 2.2.85.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.07 2.2-.85 2.2-.85.44 1.11.16 1.94.08 2.14.51.58.82 1.32.82 2.23 0 3.19-1.87 3.88-3.65 4.09.29.26.54.77.54 1.56 0 1.13-.01 2.04-.01 2.32 0 .21.15.47.55.39A8.025 8.025 0 0 0 16 8.22C16 3.68 12.42 0 8 0z"
-              />
-            </svg>
-            Entrar com GitHub
-          </a>
-
-          <!-- Login with X (Twitter) -->
-          <a class="btn btn-x" href="/login/x" rel="nofollow">
-            <!-- Simple X glyph -->
-            <svg
-              aria-hidden="true"
-              width="16"
-              height="16"
-              viewBox="0 0 1200 1227"
-              fill="currentColor"
-            >
-              <path
-                d="M714 519 1168 0H1062L660 465 340 0H0l476 681L0 1227h106 412l324-372 336 372h340L714 519Zm-116 133-275 315H122l310-357L122 85h170l265 368 298-338h201L598 652Z"
-              />
-            </svg>
-            Entrar com X (Twitter)
-          </a>
-        </div>
+      <div class="row">
+        <a class="btn btn-logout" href="/logout" rel="nofollow">Sair</a>
+        <a class="btn" href="/me" rel="nofollow" title="Ver JSON da sessão">
+          <span class="kbd">GET</span> <strong>/me</strong>
+        </a>
       </div>
-      <div class="footer">
-        Ao prosseguir, você concorda com o uso de cookies de sessão.
-      </div>
-      {{end}}
+
+      <p>
+        Você está autenticado. Use o endpoint
+        <span class="kbd">/me</span> para inspecionar os dados de sessão.
+      </p>
     </div>
-  </body>
-</html>
 
+    {{else}}
+    <!-- Unauthenticated view -->
+    <div class="card grid">
+      <h1>Autenticação</h1>
+      <p>Escolha um provedor para entrar:</p>
+
+      <div class="grid grid-2" style="margin-top: 8px">
+        <!-- Login with GitHub -->
+        <a class="btn btn-gh" href="/login/github" rel="nofollow">
+          <!-- Simple SVG icon (GitHub) -->
+          <svg aria-hidden="true" width="18" height="18" viewBox="0 0 16 16" fill="currentColor">
+            <path
+              d="M8 0C3.58 0 0 3.68 0 8.22c0 3.63 2.29 6.71 5.47 7.79.4.08.55-.18.55-.39 0-.19-.01-.82-.01-1.49-2 .37-2.53-.5-2.69-.96-.09-.24-.48-.96-.82-1.16-.28-.15-.68-.52-.01-.53.63-.01 1.08.6 1.23.85.72 1.21 1.87.87 2.33.66.07-.54.28-.87.51-1.07-1.78-.21-3.64-.92-3.64-4.1 0-.91.31-1.65.82-2.23-.08-.2-.36-1.03.08-2.14 0 0 .67-.22 2.2.85.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.07 2.2-.85 2.2-.85.44 1.11.16 1.94.08 2.14.51.58.82 1.32.82 2.23 0 3.19-1.87 3.88-3.65 4.09.29.26.54.77.54 1.56 0 1.13-.01 2.04-.01 2.32 0 .21.15.47.55.39A8.025 8.025 0 0 0 16 8.22C16 3.68 12.42 0 8 0z" />
+          </svg>
+          Entrar com GitHub
+        </a>
+
+        <!-- Login with X (Twitter) -->
+        <a class="btn btn-x" href="/login/x" rel="nofollow">
+          <!-- Simple X glyph -->
+          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 1200 1227" fill="currentColor">
+            <path
+              d="M714 519 1168 0H1062L660 465 340 0H0l476 681L0 1227h106 412l324-372 336 372h340L714 519Zm-116 133-275 315H122l310-357L122 85h170l265 368 298-338h201L598 652Z" />
+          </svg>
+          Entrar com X (Twitter)
+        </a>
+        {{if .FakeOAuthEnabled}}
+        <!-- Login with Fake OAuth (DEV only) -->
+        <a class="btn" style="border-color:#555" href="/login/fake" rel="nofollow">
+          <span class="kbd">DEV</span> <strong>Login Fake OAuth</strong>
+        </a>
+        {{end}}
+      </div>
+    </div>
+    <div class="footer">
+      Ao prosseguir, você concorda com o uso de cookies de sessão.
+    </div>
+    {{end}}
+  </div>
+</body>
+
+</html>
