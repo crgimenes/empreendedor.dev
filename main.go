@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	_ "embed"
 	"encoding/json"
 	"html/template"
 	"log"
@@ -14,9 +13,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/crgimenes/empreendedor.dev/assets"
 	"github.com/crgimenes/empreendedor.dev/config"
 	"github.com/crgimenes/empreendedor.dev/lua"
 	"github.com/crgimenes/empreendedor.dev/session"
+	"github.com/crgimenes/empreendedor.dev/templates"
 	"github.com/crgimenes/empreendedor.dev/user"
 )
 
@@ -26,10 +27,8 @@ type stateEntry struct {
 }
 
 var (
-	//go:embed assets/index.html
-	indexHTML string
-	GitTag    = "dev"
-	states    = struct {
+	GitTag = "dev"
+	states = struct {
 		sync.Mutex
 		m map[string]stateEntry
 	}{m: make(map[string]stateEntry)}
@@ -69,9 +68,12 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 		FakeOAuthEnabled bool
 	}{Authed: authed, User: u, FakeOAuthEnabled: config.Cfg.FakeOAuthEnabled}
 
-	indexTpl := template.Must(template.New("index").Parse(indexHTML))
+	indexTpl, err := template.ParseFS(templates.FS, "index.html")
+	if err != nil {
+		log.Fatalf("parse template: %v", err)
+	}
 
-	err := indexTpl.Execute(w, data)
+	err = indexTpl.Execute(w, data)
 	if err != nil {
 		log.Printf("template execute error: %v", err)
 		http.Error(w, "template error", http.StatusInternalServerError)
@@ -228,7 +230,13 @@ func main() {
 		}
 	}
 
+	// Parse templates after configuration (if templates may depend on config in future).
+	var err error
 	mux := http.NewServeMux()
+
+	// Static assets under /assets/ (served from embed or disk depending on build tag).
+	fileServer := http.FileServer(assets.FS)
+	mux.Handle("/assets/", http.StripPrefix("/assets/", fileServer))
 	mux.HandleFunc("/", indexHandler)
 	mux.HandleFunc("/healthz", healthHandler)
 
@@ -281,7 +289,7 @@ func main() {
 		5*time.Second)
 	defer cancel()
 
-	err := srv.Shutdown(ctx)
+	err = srv.Shutdown(ctx)
 	if err != nil {
 		log.Printf("Shutdown error: %v", err)
 	}

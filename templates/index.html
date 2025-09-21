@@ -3,8 +3,18 @@
 
 <head>
   <meta charset="utf-8" />
-  <title>Login – GitHub ou X</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#000000" />
+  <meta name="description" content="Autenticação de desenvolvedor: GitHub, X (Twitter) e provedor Fake para testes." />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <link rel="icon" type="image/png" href="/assets/favicon-96x96.png" sizes="96x96" />
+  <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg" />
+  <link rel="shortcut icon" href="/assets/favicon.ico" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png" />
+  <link rel="manifest" href="/assets/site.webmanifest" />
+
+  <title>Login – GitHub ou X</title>
   <!-- Minimal inline CSS only for layout/clarity -->
   <style>
     :root {
@@ -185,7 +195,8 @@
         <img class="avatar" src="{{.User.AvatarURL}}" alt="User avatar" />
         <div>
           <h2>
-            Bem-vindo, {{if .User.Name}}{{.User.Name}}{{else}}{{.User.Login}}{{end}}!
+            Bem-vindo, {{if
+            .User.Name}}{{.User.Name}}{{else}}{{.User.Login}}{{end}}!
           </h2>
           <div class="meta">
             <div><strong>ID:</strong> {{.User.ID}}</div>
@@ -237,7 +248,7 @@
         </a>
         {{if .FakeOAuthEnabled}}
         <!-- Login with Fake OAuth (DEV only) -->
-        <a class="btn" style="border-color:#555" href="/login/fake" rel="nofollow">
+        <a class="btn" style="border-color: #555" href="/login/fake" rel="nofollow">
           <span class="kbd">DEV</span> <strong>Login Fake OAuth</strong>
         </a>
         {{end}}
