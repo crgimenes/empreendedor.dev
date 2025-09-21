@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -50,6 +51,27 @@ func securityHeaders(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+// loggingMiddleware logs method, path, status and duration for each request.
+func loggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		rw := &respWriter{ResponseWriter: w, status: 200}
+		next.ServeHTTP(rw, r)
+		dur := time.Since(start)
+		log.Printf("request method=%s path=%s status=%d dur_ms=%s remote=%s", r.Method, r.URL.Path, rw.status, strconv.FormatInt(dur.Milliseconds(), 10), r.RemoteAddr)
+	})
+}
+
+type respWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *respWriter) WriteHeader(code int) {
+	w.status = code
+	w.ResponseWriter.WriteHeader(code)
 }
 
 func indexHandler(w http.ResponseWriter, r *http.Request) {
@@ -237,6 +259,11 @@ func main() {
 	// Static assets under /assets/ (served from embed or disk depending on build tag).
 	fileServer := http.FileServer(assets.FS)
 	mux.Handle("/assets/", http.StripPrefix("/assets/", fileServer))
+	// Favicon root path fallback for Safari and legacy browsers.
+	mux.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
+		// If later an actual favicon.ico is embedded, this can be updated to serve it directly.
+		http.Redirect(w, r, "/assets/favicon-96x96.png", http.StatusMovedPermanently)
+	})
 	mux.HandleFunc("/", indexHandler)
 	mux.HandleFunc("/healthz", healthHandler)
 
@@ -254,7 +281,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              config.Cfg.Addrs,
-		Handler:           securityHeaders(mux),
+		Handler:           loggingMiddleware(securityHeaders(mux)),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      15 * time.Second,
