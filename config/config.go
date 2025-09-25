@@ -3,15 +3,16 @@ package config
 type Config struct {
 	Addrs              string
 	BaseURL            string
+	DatabaseURL        string
+	FakeOAuthBaseURL   string
+	FakeOAuthClientID  string
+	FakeOAuthEnabled   bool
+	FakeOAuthRedirect  string
 	GitHubClientID     string
 	GitHubClientSecret string
 	GitTag             string
 	XClientID          string
 	XClientSecret      string
-	FakeOAuthBaseURL   string
-	FakeOAuthClientID  string
-	FakeOAuthRedirect  string
-	FakeOAuthEnabled   bool
 }
 
 var Cfg = &Config{

@@ -131,6 +131,11 @@ func runLuaFile(name string) {
 	L.SetGlobal("GitHubClientSecret", os.Getenv("GITHUB_CLIENT_SECRET"))
 	L.SetGlobal("XClientID", os.Getenv("X_CLIENT_ID"))
 	L.SetGlobal("XClientSecret", os.Getenv("X_CLIENT_SECRET"))
+	L.SetGlobal("FakeOAuthEnabled", os.Getenv("FAKE_OAUTH_ENABLED") == "true")
+	L.SetGlobal("FakeOAuthBaseURL", os.Getenv("FAKE_OAUTH_BASE_URL"))
+	L.SetGlobal("FakeOAuthClientID", os.Getenv("FAKE_OAUTH_CLIENT_ID"))
+	L.SetGlobal("FakeOAuthRedirectPath", os.Getenv("FAKE_OAUTH_REDIRECT_PATH"))
+	L.SetGlobal("DatabaseURL", os.Getenv("DATABASE_URL"))
 
 	// Read the Lua file.
 	b, err := os.ReadFile(filepath.Clean(name))
@@ -149,6 +154,19 @@ func runLuaFile(name string) {
 	config.Cfg.GitHubClientSecret = L.MustGetString("GitHubClientSecret")
 	config.Cfg.XClientID = L.MustGetString("XClientID")
 	config.Cfg.XClientSecret = L.MustGetString("XClientSecret")
+	config.Cfg.GitTag = L.MustGetString("GitTag")
+	config.Cfg.DatabaseURL = L.MustGetString("DatabaseURL")
+
+	config.Cfg.FakeOAuthEnabled = L.MustGetBool("FakeOAuthEnabled")
+	if config.Cfg.FakeOAuthEnabled {
+		config.Cfg.FakeOAuthBaseURL = L.MustGetString("FakeOAuthBaseURL")
+		config.Cfg.FakeOAuthClientID = L.MustGetString("FakeOAuthClientID")
+		config.Cfg.FakeOAuthRedirect = L.MustGetString("FakeOAuthRedirectPath")
+	}
+
+	if config.Cfg.DatabaseURL == "" {
+		log.Fatal("Missing database URL in configuration")
+	}
 
 	// Allow missing real providers if fake OAuth is enabled (for local tests).
 	if !config.Cfg.FakeOAuthEnabled {
@@ -156,7 +174,7 @@ func runLuaFile(name string) {
 			config.Cfg.GitHubClientSecret == "" ||
 			config.Cfg.XClientID == "" ||
 			config.Cfg.XClientSecret == "" {
-			log.Fatal("Missing OAuth2 client ID/secret in environment variables")
+			log.Fatal("Missing OAuth2 client ID/secret in configuration")
 		}
 	}
 
