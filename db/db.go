@@ -3,13 +3,13 @@ package db
 import (
 	"database/sql"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 
-	"github.com/crgimenes/empreendedor.dev/config"
+	"edev/config"
+	"edev/log"
 )
 
 var Storage *Postgres

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"html/template"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -14,13 +13,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/crgimenes/empreendedor.dev/assets"
-	"github.com/crgimenes/empreendedor.dev/config"
-	"github.com/crgimenes/empreendedor.dev/db"
-	"github.com/crgimenes/empreendedor.dev/lua"
-	"github.com/crgimenes/empreendedor.dev/session"
-	"github.com/crgimenes/empreendedor.dev/templates"
-	"github.com/crgimenes/empreendedor.dev/user"
+	"edev/assets"
+	"edev/config"
+	"edev/db"
+	"edev/log"
+	"edev/lua"
+	"edev/session"
+	"edev/templates"
+	"edev/user"
 )
 
 type stateEntry struct {
@@ -251,7 +251,6 @@ func meHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	log.SetFlags(log.LstdFlags | log.Llongfile)
 	config.Cfg.GitTag = GitTag
 
 	const initLua = "init.lua"
