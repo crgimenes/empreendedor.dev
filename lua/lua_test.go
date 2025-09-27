@@ -1,13 +1,8 @@
 package lua
 
 import (
-	"log"
 	"testing"
 )
-
-func init() {
-	log.SetFlags(log.LstdFlags | log.Llongfile)
-}
 
 // TestDoString executes a simple Lua script that assigns a global variable
 // and then verifies that the variable was correctly set.

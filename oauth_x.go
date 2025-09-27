@@ -5,14 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"time"
 
-	"github.com/crgimenes/empreendedor.dev/config"
-	"github.com/crgimenes/empreendedor.dev/session"
-	"github.com/crgimenes/empreendedor.dev/user"
-	"github.com/crgimenes/empreendedor.dev/utils"
+	"edev/config"
+	"edev/log"
+	"edev/session"
+	"edev/user"
+	"edev/utils"
+
 	"golang.org/x/oauth2"
 )
 

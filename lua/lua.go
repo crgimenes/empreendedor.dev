@@ -3,10 +3,11 @@ package lua
 import (
 	"errors"
 	"fmt"
-	"log"
 	"time"
 
 	lua "github.com/yuin/gopher-lua"
+
+	"edev/log"
 )
 
 type Lua struct {

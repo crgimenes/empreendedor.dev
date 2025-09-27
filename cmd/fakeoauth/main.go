@@ -30,13 +30,14 @@ import (
 	"errors"
 	"flag"
 	"io"
-	"log"
 	mrand "math/rand"
 	"net/http"
 	"net/url"
 	"strings"
 	"sync"
 	"time"
+
+	"edev/log"
 )
 
 type authCode struct {
@@ -373,7 +374,6 @@ func janitor(st *store) {
 }
 
 func main() {
-	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
 	cfg := parseFlags()
 	if cfg.Addr == "" {
 		log.Fatal("addr required")
