@@ -2,16 +2,16 @@ package main
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
-	"github.com/crgimenes/empreendedor.dev/config"
-	"github.com/crgimenes/empreendedor.dev/session"
-	"github.com/crgimenes/empreendedor.dev/user"
-	"github.com/crgimenes/empreendedor.dev/utils"
+	"edev/config"
+	"edev/log"
+	"edev/session"
+	"edev/user"
+	"edev/utils"
 )
 
 // FakeProvider integrates with the local fake OAuth server (cmd/fakeoauth) for development/testing.

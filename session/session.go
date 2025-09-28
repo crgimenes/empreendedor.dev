@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/crgimenes/empreendedor.dev/user"
+	"edev/user"
 )
 
 type session struct {

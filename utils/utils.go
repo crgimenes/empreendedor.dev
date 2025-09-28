@@ -4,8 +4,22 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"io"
 	"strings"
+
+	"edev/log"
 )
+
+// Closer close descriptor to use with defer.
+func Closer(f io.Closer) {
+	if f == nil {
+		return
+	}
+	err := f.Close()
+	if err != nil {
+		log.Println(err)
+	}
+}
 
 func randBytes(n int) []byte {
 	b := make([]byte, n)

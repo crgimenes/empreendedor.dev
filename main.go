@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"html/template"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -14,12 +13,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/crgimenes/empreendedor.dev/assets"
-	"github.com/crgimenes/empreendedor.dev/config"
-	"github.com/crgimenes/empreendedor.dev/lua"
-	"github.com/crgimenes/empreendedor.dev/session"
-	"github.com/crgimenes/empreendedor.dev/templates"
-	"github.com/crgimenes/empreendedor.dev/user"
+	"edev/assets"
+	"edev/config"
+	"edev/db"
+	"edev/log"
+	"edev/lua"
+	"edev/session"
+	"edev/templates"
+	"edev/user"
+	"syscall"
 )
 
 type stateEntry struct {
@@ -119,18 +121,33 @@ func fileExists(name string) bool {
 	return true
 }
 
+func ifEmpty(v, def string) string {
+	if v != "" {
+		return v
+	}
+	return def
+}
+
 func runLuaFile(name string) {
 	// Create a new Lua state.
 	L := lua.New()
 	defer L.Close()
 
-	L.SetGlobal("BaseURL", config.Cfg.BaseURL)
-	L.SetGlobal("Address", config.Cfg.Addrs)
-	L.SetGlobal("GitTag", GitTag)
+	L.SetGlobal("GitTag", ifEmpty(GitTag, config.Cfg.GitTag))
+	L.SetGlobal("BaseURL", ifEmpty(os.Getenv("BASE_URL"), config.Cfg.BaseURL))
+	L.SetGlobal("Address", ifEmpty(os.Getenv("ADDRESS"), config.Cfg.Addrs))
 	L.SetGlobal("GitHubClientID", os.Getenv("GITHUB_CLIENT_ID"))
 	L.SetGlobal("GitHubClientSecret", os.Getenv("GITHUB_CLIENT_SECRET"))
 	L.SetGlobal("XClientID", os.Getenv("X_CLIENT_ID"))
 	L.SetGlobal("XClientSecret", os.Getenv("X_CLIENT_SECRET"))
+	L.SetGlobal("FakeOAuthEnabled", os.Getenv("FAKE_OAUTH_ENABLED") == "true")
+	L.SetGlobal("FakeOAuthBaseURL", ifEmpty(
+		os.Getenv("FAKE_OAUTH_BASE_URL"), config.Cfg.FakeOAuthBaseURL))
+	L.SetGlobal("FakeOAuthClientID", ifEmpty(
+		os.Getenv("FAKE_OAUTH_CLIENT_ID"), config.Cfg.FakeOAuthClientID))
+	L.SetGlobal("FakeOAuthRedirectPath", ifEmpty(
+		os.Getenv("FAKE_OAUTH_REDIRECT_PATH"), config.Cfg.FakeOAuthRedirect))
+	L.SetGlobal("DatabaseURL", os.Getenv("DATABASE_URL"))
 
 	// Read the Lua file.
 	b, err := os.ReadFile(filepath.Clean(name))
@@ -145,10 +162,26 @@ func runLuaFile(name string) {
 
 	config.Cfg.Addrs = L.MustGetString("Address")
 	config.Cfg.BaseURL = L.MustGetString("BaseURL")
+	config.Cfg.DatabaseURL = L.MustGetString("DatabaseURL")
+	config.Cfg.FakeOAuthEnabled = L.MustGetBool("FakeOAuthEnabled")
 	config.Cfg.GitHubClientID = L.MustGetString("GitHubClientID")
 	config.Cfg.GitHubClientSecret = L.MustGetString("GitHubClientSecret")
+	config.Cfg.GitTag = L.MustGetString("GitTag")
 	config.Cfg.XClientID = L.MustGetString("XClientID")
 	config.Cfg.XClientSecret = L.MustGetString("XClientSecret")
+
+	if config.Cfg.FakeOAuthEnabled {
+
+		session.EnableInsecureCookie()
+
+		config.Cfg.FakeOAuthBaseURL = L.MustGetString("FakeOAuthBaseURL")
+		config.Cfg.FakeOAuthClientID = L.MustGetString("FakeOAuthClientID")
+		config.Cfg.FakeOAuthRedirect = L.MustGetString("FakeOAuthRedirectPath")
+	}
+
+	if config.Cfg.DatabaseURL == "" {
+		log.Fatal("Missing database URL in configuration")
+	}
 
 	// Allow missing real providers if fake OAuth is enabled (for local tests).
 	if !config.Cfg.FakeOAuthEnabled {
@@ -156,7 +189,7 @@ func runLuaFile(name string) {
 			config.Cfg.GitHubClientSecret == "" ||
 			config.Cfg.XClientID == "" ||
 			config.Cfg.XClientSecret == "" {
-			log.Fatal("Missing OAuth2 client ID/secret in environment variables")
+			log.Fatal("Missing OAuth2 client ID/secret in configuration")
 		}
 	}
 
@@ -218,10 +251,8 @@ func meHandler(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(u)
 }
 
-// Provider callback handlers now in dedicated files.
-
 func main() {
-	log.SetFlags(log.LstdFlags | log.Llongfile)
+	config.Cfg.GitTag = GitTag
 
 	const initLua = "init.lua"
 
@@ -229,46 +260,30 @@ func main() {
 		log.Fatal("init.lua not found")
 	}
 
-	if envBase := os.Getenv("BASE_URL"); envBase != "" {
-		config.Cfg.BaseURL = envBase
-	}
 	runLuaFile(initLua)
 
-	// Read fake OAuth env vars (simple optional integration).
-	if os.Getenv("FAKE_OAUTH_ENABLED") == "true" {
-		config.Cfg.FakeOAuthEnabled = true
-		session.EnableInsecureCookie()
-		config.Cfg.FakeOAuthBaseURL = os.Getenv("FAKE_OAUTH_BASE_URL")
-		config.Cfg.FakeOAuthClientID = os.Getenv("FAKE_OAUTH_CLIENT_ID")
-		config.Cfg.FakeOAuthRedirect = os.Getenv("FAKE_OAUTH_REDIRECT_PATH")
-		if config.Cfg.FakeOAuthRedirect == "" {
-			config.Cfg.FakeOAuthRedirect = "/fake/oauth/callback"
-		}
-		if config.Cfg.FakeOAuthBaseURL == "" {
-			config.Cfg.FakeOAuthBaseURL = "http://127.0.0.1:9100"
-		}
-		if config.Cfg.FakeOAuthClientID == "" {
-			config.Cfg.FakeOAuthClientID = "fake-client-id"
-		}
+	var err error
+
+	db.Storage, err = db.New()
+	if err != nil {
+		log.Fatalf("Error on db: %s", err)
 	}
 
-	// Parse templates after configuration (if templates may depend on config in future).
-	var err error
 	mux := http.NewServeMux()
 
-	// Static assets under /assets/ (served from embed or disk depending on build tag).
 	fileServer := http.FileServer(assets.FS)
 	mux.Handle("/assets/", http.StripPrefix("/assets/", fileServer))
-	// Favicon root path fallback for Safari and legacy browsers.
 	mux.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
-		// If later an actual favicon.ico is embedded, this can be updated to serve it directly.
-		http.Redirect(w, r, "/assets/favicon-96x96.png", http.StatusMovedPermanently)
+		// some browsers do not support link rel="icon"
+		// redirect to the one served from /assets/
+		http.Redirect(w, r, "/assets/favicon.ico", http.StatusMovedPermanently)
 	})
 	mux.HandleFunc("/", indexHandler)
 	mux.HandleFunc("/healthz", healthHandler)
 
 	mux.HandleFunc("/login/github", gitHubProvider.LoginHandler)
 	mux.HandleFunc("/login/x", xProvider.LoginHandler)
+
 	if config.Cfg.FakeOAuthEnabled {
 		mux.HandleFunc("/login/fake", fakeProvider.LoginHandler)
 		mux.HandleFunc(config.Cfg.FakeOAuthRedirect, fakeProvider.CallbackHandler)
@@ -307,18 +322,20 @@ func main() {
 
 	// Graceful shutdown on Ctrl+C (SIGINT).
 	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, os.Interrupt)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	<-stop
 
-	log.Println("Shutting down gracefully…")
+	log.Println("Shutting down gracefully...")
 	ctx, cancel := context.WithTimeout(
 		context.Background(),
 		5*time.Second)
 	defer cancel()
 
-	err = srv.Shutdown(ctx)
-	if err != nil {
+	if err := srv.Shutdown(ctx); err != nil {
 		log.Printf("Shutdown error: %v", err)
+	}
+	if db.Storage != nil {
+		db.Storage.Close()
 	}
 	log.Println("Server stopped.")
 }
