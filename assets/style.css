@@ -1,0 +1,194 @@
+:root {
+    --bg: #0f1216;
+    --card: #161b22;
+    --text: #e6edf3;
+    --muted: #9ba3af;
+    --accent: #2f81f7;
+    --accent2: #1d9bf0;
+    --danger: #f85149;
+    --ok: #2ea043;
+    --radius: 16px;
+}
+
+html,
+body {
+    height: 100%;
+}
+
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font:
+        16px/1.5 system-ui,
+        -apple-system,
+        Segoe UI,
+        Roboto,
+        Ubuntu,
+        Cantarell,
+        "Helvetica Neue",
+        Arial,
+        "Noto Sans",
+        "Apple Color Emoji",
+        "Segoe UI Emoji",
+        "Segoe UI Symbol";
+    display: grid;
+    place-items: center;
+}
+
+.container {
+    width: min(820px, 92vw);
+    padding: 24px;
+}
+
+.card {
+    background: var(--card);
+    border: 1px solid #30363d;
+    border-radius: var(--radius);
+    padding: 24px;
+    box-shadow: 0 6px 30px rgba(0, 0, 0, 0.25);
+}
+
+h1,
+h2,
+h3 {
+    margin: 0 0 12px;
+}
+
+p {
+    margin: 8px 0 0;
+    color: var(--muted);
+}
+
+.grid {
+    display: grid;
+    gap: 16px;
+}
+
+.grid-2 {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.hero p:first-of-type {
+    color: var(--text);
+}
+
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    height: 46px;
+    padding: 0 16px;
+    border: 1px solid #30363d;
+    border-radius: 12px;
+    text-decoration: none;
+    color: var(--text);
+    background: transparent;
+    transition:
+        transform 0.05s ease,
+        background 0.2s ease,
+        border-color 0.2s ease;
+    user-select: none;
+    cursor: pointer;
+}
+
+.btn:active {
+    transform: translateY(1px);
+}
+
+.btn:hover {
+    border-color: #3d444d;
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.btn-primary {
+    border-color: rgba(47, 129, 247, 0.35);
+    background: rgba(47, 129, 247, 0.12);
+}
+
+.btn-primary:hover {
+    background: rgba(47, 129, 247, 0.18);
+}
+
+.btn-gh {
+    border-color: rgba(47, 129, 247, 0.35);
+}
+
+.btn-gh:hover {
+    background: rgba(47, 129, 247, 0.12);
+}
+
+.btn-x {
+    border-color: rgba(29, 155, 240, 0.35);
+}
+
+.btn-x:hover {
+    background: rgba(29, 155, 240, 0.12);
+}
+
+.btn-logout {
+    border-color: rgba(248, 81, 73, 0.35);
+}
+
+.btn-logout:hover {
+    background: rgba(248, 81, 73, 0.12);
+}
+
+.btn-dev {
+    border-color: #555;
+}
+
+.btn-dev:hover {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.row-space-between {
+    justify-content: space-between;
+}
+
+.avatar {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    border: 1px solid #30363d;
+    object-fit: cover;
+    background: #0b0e12;
+}
+
+.meta {
+    color: var(--muted);
+    font-size: 14px;
+}
+
+.kbd {
+    font-family:
+        ui-monospace,
+        SFMono-Regular,
+        Menlo,
+        Monaco,
+        Consolas,
+        "Liberation Mono",
+        monospace;
+    font-size: 12px;
+    background: #0b0e12;
+    border: 1px solid #30363d;
+    border-bottom-width: 2px;
+    padding: 2px 6px;
+    border-radius: 8px;
+    color: var(--text);
+}
+
+.footer {
+    margin-top: 18px;
+    color: var(--muted);
+    font-size: 13px;
+    text-align: center;
+}

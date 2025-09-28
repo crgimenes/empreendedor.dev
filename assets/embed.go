@@ -8,7 +8,7 @@ import (
 	"net/http"
 )
 
-//go:embed *.webmanifest *.png *.svg *.ico
+//go:embed *.webmanifest *.png *.svg *.ico *.css
 var assets embed.FS
 
 var FS = http.FS(assets)
@@ -17,4 +17,5 @@ func init() {
 	// Ensure correct MIME types for certain assets.
 	_ = mime.AddExtensionType(".svg", "image/svg+xml")
 	_ = mime.AddExtensionType(".webmanifest", "application/manifest+json")
+	_ = mime.AddExtensionType(".css", "text/css")
 }

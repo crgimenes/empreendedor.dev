@@ -87,10 +87,9 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	data := struct {
-		Authed           bool
-		User             user.User
-		FakeOAuthEnabled bool
-	}{Authed: authed, User: u, FakeOAuthEnabled: config.Cfg.FakeOAuthEnabled}
+		Authed bool
+		User   user.User
+	}{Authed: authed, User: u}
 
 	indexTpl, err := template.ParseFS(templates.FS, "index.html")
 	if err != nil {
@@ -99,6 +98,31 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 
 	err = indexTpl.Execute(w, data)
 	if err != nil {
+		log.Printf("template execute error: %v", err)
+		http.Error(w, "template error", http.StatusInternalServerError)
+	}
+}
+
+func loginPageHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	sid, ok := session.GetCookie(r)
+	if ok {
+		if _, found := session.Get(sid); found {
+			http.Redirect(w, r, config.Cfg.BaseURL+"/", http.StatusFound)
+			return
+		}
+	}
+
+	data := struct {
+		FakeOAuthEnabled bool
+	}{FakeOAuthEnabled: config.Cfg.FakeOAuthEnabled}
+
+	loginTpl, err := template.ParseFS(templates.FS, "login.html")
+	if err != nil {
+		log.Fatalf("parse template: %v", err)
+	}
+
+	if err := loginTpl.Execute(w, data); err != nil {
 		log.Printf("template execute error: %v", err)
 		http.Error(w, "template error", http.StatusInternalServerError)
 	}
@@ -147,7 +171,6 @@ func runLuaFile(name string) {
 		os.Getenv("FAKE_OAUTH_CLIENT_ID"), config.Cfg.FakeOAuthClientID))
 	L.SetGlobal("FakeOAuthRedirectPath", ifEmpty(
 		os.Getenv("FAKE_OAUTH_REDIRECT_PATH"), config.Cfg.FakeOAuthRedirect))
-	L.SetGlobal("DatabaseURL", os.Getenv("DATABASE_URL"))
 
 	// Read the Lua file.
 	b, err := os.ReadFile(filepath.Clean(name))
@@ -162,7 +185,6 @@ func runLuaFile(name string) {
 
 	config.Cfg.Addrs = L.MustGetString("Address")
 	config.Cfg.BaseURL = L.MustGetString("BaseURL")
-	config.Cfg.DatabaseURL = L.MustGetString("DatabaseURL")
 	config.Cfg.FakeOAuthEnabled = L.MustGetBool("FakeOAuthEnabled")
 	config.Cfg.GitHubClientID = L.MustGetString("GitHubClientID")
 	config.Cfg.GitHubClientSecret = L.MustGetString("GitHubClientSecret")
@@ -177,10 +199,6 @@ func runLuaFile(name string) {
 		config.Cfg.FakeOAuthBaseURL = L.MustGetString("FakeOAuthBaseURL")
 		config.Cfg.FakeOAuthClientID = L.MustGetString("FakeOAuthClientID")
 		config.Cfg.FakeOAuthRedirect = L.MustGetString("FakeOAuthRedirectPath")
-	}
-
-	if config.Cfg.DatabaseURL == "" {
-		log.Fatal("Missing database URL in configuration")
 	}
 
 	// Allow missing real providers if fake OAuth is enabled (for local tests).
@@ -279,6 +297,7 @@ func main() {
 		http.Redirect(w, r, "/assets/favicon.ico", http.StatusMovedPermanently)
 	})
 	mux.HandleFunc("/", indexHandler)
+	mux.HandleFunc("/login", loginPageHandler)
 	mux.HandleFunc("/healthz", healthHandler)
 
 	mux.HandleFunc("/login/github", gitHubProvider.LoginHandler)

@@ -3,7 +3,6 @@ package config
 type Config struct {
 	Addrs              string
 	BaseURL            string
-	DatabaseURL        string
 	FakeOAuthBaseURL   string
 	FakeOAuthClientID  string
 	FakeOAuthEnabled   bool
