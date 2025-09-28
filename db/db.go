@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
+	"sync"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -33,6 +34,63 @@ type SQLite struct {
 // Transaction wraps a write transaction.
 type Transaction struct {
 	tx *sql.Tx
+}
+
+// Row wraps sql.Row so that the timeout context is canceled only after Scan or Err is invoked.
+type Row struct {
+	row    *sql.Row
+	cancel context.CancelFunc
+	once   sync.Once
+	err    error
+}
+
+func newRow(row *sql.Row, cancel context.CancelFunc) *Row {
+	return &Row{row: row, cancel: cancel}
+}
+
+func errorRow(err error) *Row {
+	return &Row{err: err}
+}
+
+func (r *Row) release() {
+	if r == nil {
+		return
+	}
+	r.once.Do(func() {
+		if r.cancel != nil {
+			r.cancel()
+		}
+	})
+}
+
+// Scan delegates to the underlying sql.Row while ensuring the timeout context is released.
+func (r *Row) Scan(dest ...any) error {
+	if r == nil {
+		return errors.New("nil row")
+	}
+	if r.err != nil {
+		return r.err
+	}
+	if r.row == nil {
+		return errors.New("nil row")
+	}
+	defer r.release()
+	return r.row.Scan(dest...)
+}
+
+// Err mirrors (*sql.Row).Err and releases the timeout context.
+func (r *Row) Err() error {
+	if r == nil {
+		return errors.New("nil row")
+	}
+	if r.err != nil {
+		return r.err
+	}
+	if r.row == nil {
+		return errors.New("nil row")
+	}
+	defer r.release()
+	return r.row.Err()
 }
 
 // Tunables (adjust as needed for your service profile).
@@ -182,13 +240,12 @@ func (t *Transaction) Query(query string, args ...any) (*sql.Rows, error) {
 }
 
 // QueryRow returns a single row inside the transaction.
-func (t *Transaction) QueryRow(query string, args ...any) *sql.Row {
+func (t *Transaction) QueryRow(query string, args ...any) *Row {
 	if t == nil || t.tx == nil {
-		return &sql.Row{}
+		return errorRow(errors.New("nil tx"))
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), defaultReadOpTimeout)
-	defer cancel()
-	return t.tx.QueryRowContext(ctx, query, args...)
+	return newRow(t.tx.QueryRowContext(ctx, query, args...), cancel)
 }
 
 // Exec executes a write statement on the RW pool (outside explicit transactions).
@@ -213,13 +270,12 @@ func (s *SQLite) Query(query string, args ...any) (*sql.Rows, error) {
 }
 
 // QueryRow executes a single-row SELECT on the RO pool.
-func (s *SQLite) QueryRow(query string, args ...any) *sql.Row {
+func (s *SQLite) QueryRow(query string, args ...any) *Row {
 	if s == nil || s.ro == nil {
-		return &sql.Row{}
+		return errorRow(errors.New("db not initialized"))
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), defaultReadOpTimeout)
-	defer cancel()
-	return s.ro.QueryRowContext(ctx, query, args...)
+	return newRow(s.ro.QueryRowContext(ctx, query, args...), cancel)
 }
 
 // QueryRW allows SELECT using the RW pool (rarely needed).
