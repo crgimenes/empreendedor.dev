@@ -1,120 +1,256 @@
+// Package db provides SQLite access using modernc.org/sqlite (no CGO).
+// Goals: performance, concurrency and predictability with minimal dependencies.
+// - Separate pools: one writer (RW) and many readers (RO).
+// - WAL + synchronous=NORMAL + busy_timeout.
+// - Short transactions with timeouts per operation (not on Begin).
+// - WAL checkpoint on Close() for hygiene.
 package db
 
 import (
+	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"runtime"
 	"time"
 
-	"github.com/jmoiron/sqlx"
-	_ "github.com/lib/pq"
+	_ "modernc.org/sqlite"
 
 	"edev/config"
 	"edev/log"
+	"edev/utils"
 )
 
-var Storage *Postgres
+// Storage keeps a global handle for convenience (preserves your original pattern).
+var Storage *SQLite
 
-type Postgres struct {
-	DB *sqlx.DB
+// SQLite holds separate read/write pools.
+type SQLite struct {
+	rw *sql.DB // single-writer pool
+	ro *sql.DB // read-only pool
 }
 
+// Transaction wraps a write transaction.
 type Transaction struct {
-	//Pg *Postgres
-	tx *sqlx.Tx
+	tx *sql.Tx
 }
 
-func New() (*Postgres, error) {
-	pg := &Postgres{}
-	var err error
-	pg.DB, err = open(config.Cfg.DatabaseURL)
+// Tunables (adjust as needed for your service profile).
+const (
+	// Slightly longer to avoid flakiness with parallel tests/CI.
+	defaultBusyTimeout     = 15 * time.Second
+	defaultWriteOpTimeout  = 8 * time.Second
+	defaultReadOpTimeout   = 5 * time.Second
+	defaultConnMaxLifeRW   = 2 * time.Minute
+	defaultConnMaxLifeRO   = 5 * time.Minute
+	defaultReadPoolMinimum = 4 // will be raised to GOMAXPROCS if larger
+)
 
-	return pg, err
+// New initializes RW/RO pools.
+// Uses config.Cfg.DatabaseURL as the SQLite path/URI; defaults to "app.db".
+func New() (*SQLite, error) {
+	path := config.Cfg.DatabaseURL
+	if path == "" {
+		path = "edev.db"
+	}
+	return NewWithPath(path)
 }
 
-func open(dbsource string) (db *sqlx.DB, err error) {
-	db, err = sqlx.Open("postgres", dbsource)
-	if err != nil {
-		err = fmt.Errorf("error open db: %v", err)
-		return
+// NewWithPath creates SQLite pools for a specific file/URI path.
+func NewWithPath(path string) (*SQLite, error) {
+	if path == "" {
+		return nil, errors.New("database path required")
 	}
 
-	err = db.Ping()
+	// DSN for write pool: WAL, NORMAL, busy_timeout, foreign_keys ON, automatic_index ON,
+	// temp_store in memory, modest cache, and tx lock set to IMMEDIATE.
+	rwDSN := fmt.Sprintf(
+		"file:%s?_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=busy_timeout(%d)&_pragma=foreign_keys(ON)&_pragma=automatic_index(ON)&_pragma=temp_store(MEMORY)&_pragma=cache_size(-20000)&_txlock=immediate",
+		path, int(defaultBusyTimeout.Milliseconds()),
+	)
+	// DSN for read-only pool: mode=ro with busy_timeout and foreign_keys ON.
+	roDSN := fmt.Sprintf(
+		"file:%s?mode=ro&_pragma=busy_timeout(%d)&_pragma=foreign_keys(ON)",
+		path, int(defaultBusyTimeout.Milliseconds()),
+	)
+
+	s := &SQLite{}
+
+	// Open writer (single connection for predictable write latency under contention).
+	rw, err := sql.Open("sqlite", rwDSN)
 	if err != nil {
-		log.Fatalln(err)
+		return nil, fmt.Errorf("open RW: %w", err)
 	}
+	rw.SetMaxOpenConns(1)
+	rw.SetMaxIdleConns(1)
+	rw.SetConnMaxLifetime(defaultConnMaxLifeRW)
+	if err := pingWithTimeout(rw, defaultWriteOpTimeout); err != nil {
+		utils.Closer(rw)
+		return nil, fmt.Errorf("ping RW: %w", err)
+	}
+	s.rw = rw
 
-	db.SetMaxOpenConns(50)
-	db.SetMaxIdleConns(30)
-	db.SetConnMaxLifetime(5 * time.Minute)
+	// Open readers (parallel reads).
+	ro, err := sql.Open("sqlite", roDSN)
+	if err != nil {
+		utils.Closer(s.rw)
+		return nil, fmt.Errorf("open RO: %w", err)
+	}
+	max := defaultReadPoolMinimum
+	if n := runtime.GOMAXPROCS(0); n > max {
+		max = n
+	}
+	ro.SetMaxOpenConns(max)
+	ro.SetMaxIdleConns(max)
+	ro.SetConnMaxLifetime(defaultConnMaxLifeRO)
+	if err := pingWithTimeout(ro, defaultReadOpTimeout); err != nil {
+		utils.Closer(ro)
+		utils.Closer(s.rw)
+		return nil, fmt.Errorf("ping RO: %w", err)
+	}
+	s.ro = ro
 
-	return
+	return s, nil
 }
 
-func (pg *Postgres) BeginTransaction() (*Transaction, error) {
-	var err error
-	tx, err := pg.DB.Beginx()
+func pingWithTimeout(db *sql.DB, d time.Duration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), d)
+	defer cancel()
+	return db.PingContext(ctx)
+}
+
+// BeginTransaction starts a write transaction.
+//
+// IMPORTANT: we intentionally DO NOT set a timeout context on BeginTx itself.
+// Timeouts are enforced on the subsequent Exec/Query* calls, not on Begin.
+// This avoids "transaction already committed/rolled back" when an early timeout fires.
+func (s *SQLite) BeginTransaction() (*Transaction, error) {
+	if s == nil || s.rw == nil {
+		return nil, errors.New("db not initialized")
+	}
+	tx, err := s.rw.BeginTx(context.Background(), nil)
 	if err != nil {
 		return nil, err
 	}
-	t := Transaction{
-		tx: tx,
-	}
-
-	return &t, nil
+	return &Transaction{tx: tx}, nil
 }
 
-func (pg Transaction) Commit() error {
-	err := pg.tx.Commit()
+// Commit finalizes a transaction; on error, attempts a rollback.
+func (t *Transaction) Commit() error {
+	if t == nil || t.tx == nil {
+		return errors.New("nil tx")
+	}
+	err := t.tx.Commit()
 	if err != nil {
-		pg.Rollback()
+		_ = t.tx.Rollback()
+		t.tx = nil
+		return err
 	}
-	pg.tx = nil
-	return err
+	t.tx = nil
+	return nil
 }
 
-func (pg Transaction) Rollback() error {
-	err := pg.tx.Rollback()
-	pg.tx = nil
-	return err
-}
-
-func (pg Transaction) Select(dest any, query string, args ...any) error {
-	return pg.tx.Select(dest, query, args...)
-}
-
-func (pg Transaction) Query(query string, args ...any) (*sql.Rows, error) {
-	return pg.tx.Query(query, args...)
-}
-
-func (pg Transaction) Get(dest any, query string, args ...any) error {
-	return pg.tx.Get(dest, query, args...)
-}
-
-func (pg Transaction) Exec(query string, args ...any) error {
-	_, err := pg.tx.Exec(query, args...)
-	return err
-}
-
-func (pg Transaction) QueryRow(query string, args ...any) *sql.Row {
-	return pg.tx.QueryRow(query, args...)
-}
-
-func (pg *Postgres) QueryRow(query string, args ...any) *sql.Row {
-	return pg.DB.QueryRow(query, args...)
-}
-
-func (pg *Postgres) Query(query string, args ...any) (*sql.Rows, error) {
-	return pg.DB.Query(query, args...)
-}
-
-func (pg *Postgres) Close() {
-	err := pg.DB.Close()
-	if err != nil {
-		log.Println(err)
+// Rollback aborts the transaction.
+func (t *Transaction) Rollback() error {
+	if t == nil || t.tx == nil {
+		return nil
 	}
+	err := t.tx.Rollback()
+	t.tx = nil
+	return err
 }
 
-func (pg *Postgres) Exec(query string, args ...any) error {
-	_, err := pg.DB.Exec(query, args...)
+// Exec executes a write statement inside the transaction.
+func (t *Transaction) Exec(query string, args ...any) error {
+	if t == nil || t.tx == nil {
+		return errors.New("nil tx")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), defaultWriteOpTimeout)
+	defer cancel()
+	_, err := t.tx.ExecContext(ctx, query, args...)
 	return err
+}
+
+// Query runs a SELECT inside the transaction (consistent view).
+func (t *Transaction) Query(query string, args ...any) (*sql.Rows, error) {
+	if t == nil || t.tx == nil {
+		return nil, errors.New("nil tx")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), defaultReadOpTimeout)
+	defer cancel()
+	return t.tx.QueryContext(ctx, query, args...)
+}
+
+// QueryRow returns a single row inside the transaction.
+func (t *Transaction) QueryRow(query string, args ...any) *sql.Row {
+	if t == nil || t.tx == nil {
+		return &sql.Row{}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), defaultReadOpTimeout)
+	defer cancel()
+	return t.tx.QueryRowContext(ctx, query, args...)
+}
+
+// Exec executes a write statement on the RW pool (outside explicit transactions).
+func (s *SQLite) Exec(query string, args ...any) error {
+	if s == nil || s.rw == nil {
+		return errors.New("db not initialized")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), defaultWriteOpTimeout)
+	defer cancel()
+	_, err := s.rw.ExecContext(ctx, query, args...)
+	return err
+}
+
+// Query executes a SELECT on the RO pool (parallel reads).
+func (s *SQLite) Query(query string, args ...any) (*sql.Rows, error) {
+	if s == nil || s.ro == nil {
+		return nil, errors.New("db not initialized")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), defaultReadOpTimeout)
+	defer cancel()
+	return s.ro.QueryContext(ctx, query, args...)
+}
+
+// QueryRow executes a single-row SELECT on the RO pool.
+func (s *SQLite) QueryRow(query string, args ...any) *sql.Row {
+	if s == nil || s.ro == nil {
+		return &sql.Row{}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), defaultReadOpTimeout)
+	defer cancel()
+	return s.ro.QueryRowContext(ctx, query, args...)
+}
+
+// QueryRW allows SELECT using the RW pool (rarely needed).
+func (s *SQLite) QueryRW(query string, args ...any) (*sql.Rows, error) {
+	if s == nil || s.rw == nil {
+		return nil, errors.New("db not initialized")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), defaultReadOpTimeout)
+	defer cancel()
+	return s.rw.QueryContext(ctx, query, args...)
+}
+
+// CheckpointWAL triggers a WAL checkpoint with TRUNCATE.
+func (s *SQLite) CheckpointWAL() error {
+	if s == nil || s.rw == nil {
+		return errors.New("db not initialized")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	_, err := s.rw.ExecContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`)
+	return err
+}
+
+// Close closes pools; performs a best-effort WAL checkpoint first.
+func (s *SQLite) Close() {
+	if s == nil {
+		return
+	}
+	if err := s.CheckpointWAL(); err != nil {
+		log.Println("wal checkpoint:", err)
+	}
+	utils.Closer(s.ro)
+	utils.Closer(s.rw)
 }

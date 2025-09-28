@@ -21,6 +21,7 @@ import (
 	"edev/session"
 	"edev/templates"
 	"edev/user"
+	"syscall"
 )
 
 type stateEntry struct {
@@ -321,18 +322,20 @@ func main() {
 
 	// Graceful shutdown on Ctrl+C (SIGINT).
 	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, os.Interrupt)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	<-stop
 
-	log.Println("Shutting down gracefully…")
+	log.Println("Shutting down gracefully...")
 	ctx, cancel := context.WithTimeout(
 		context.Background(),
 		5*time.Second)
 	defer cancel()
 
-	err = srv.Shutdown(ctx)
-	if err != nil {
+	if err := srv.Shutdown(ctx); err != nil {
 		log.Printf("Shutdown error: %v", err)
+	}
+	if db.Storage != nil {
+		db.Storage.Close()
 	}
 	log.Println("Server stopped.")
 }
