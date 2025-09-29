@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"edev/assets"
@@ -21,7 +22,6 @@ import (
 	"edev/session"
 	"edev/templates"
 	"edev/user"
-	"syscall"
 )
 
 type stateEntry struct {
@@ -38,8 +38,9 @@ var (
 	tpl *template.Template
 )
 
-func loadTemplates() *template.Template {
-	t, err := template.ParseFS(
+func loadTemplates() {
+	var err error
+	tpl, err = template.ParseFS(
 		templates.FS,
 		"index.html",
 		"login.html",
@@ -48,8 +49,6 @@ func loadTemplates() *template.Template {
 	if err != nil {
 		log.Fatalf("parse templates: %v", err)
 	}
-
-	return t
 }
 
 func securityHeaders(next http.Handler) http.Handler {
@@ -277,7 +276,7 @@ func meHandler(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	config.Cfg.GitTag = GitTag
-	tpl = loadTemplates()
+	loadTemplates()
 
 	const initLua = "init.lua"
 
