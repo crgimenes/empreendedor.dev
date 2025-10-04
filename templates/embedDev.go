@@ -14,7 +14,7 @@ var (
 	tpl *template.Template
 )
 
-func ExecTemplate(w io.Writer, templateName string, data any) error {
+func ExecuteTemplate(w io.Writer, templateName string, data any) error {
 	tpl = loadTemplates()
 	return tpl.ExecuteTemplate(w, templateName, data)
 }
