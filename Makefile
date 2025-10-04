@@ -14,6 +14,9 @@ build:
 	#Linux amd64 build
 	GOOS=linux GOARCH=amd64 go build $(BUILD_FLAGS) -o $(BINARY_NAME)-linux-amd64 .
 
+dev:
+	go run -tags dev -trimpath .
+
 clean:
 	rm -f $(BINARY_NAME) $(BINARY_NAME)-*
 
