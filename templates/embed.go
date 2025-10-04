@@ -2,7 +2,18 @@
 
 package templates
 
-import "embed"
+import (
+	"embed"
+	"io"
+)
 
-//go:embed *.ghtml partials/*.ghtml
-var FS embed.FS
+var (
+	//go:embed *.ghtml partials/*.ghtml
+	filesystem embed.FS
+
+	tpl = loadTemplates()
+)
+
+func ExecuteTemplate(w io.Writer, templateName string, data any) error {
+	return tpl.ExecuteTemplate(w, templateName, data)
+}
