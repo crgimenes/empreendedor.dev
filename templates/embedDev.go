@@ -3,9 +3,18 @@
 package templates
 
 import (
-	"io/fs"
+	"html/template"
+	"io"
 	"os"
 )
 
-// FS provides direct filesystem access to templates during development.
-var FS fs.FS = os.DirFS("./templates")
+var (
+	filesystem = os.DirFS("./templates")
+
+	tpl *template.Template
+)
+
+func Exec(w io.Writer, templateName string, data any) error {
+	tpl = loadTemplates()
+	return tpl.ExecuteTemplate(w, templateName, data)
+}
