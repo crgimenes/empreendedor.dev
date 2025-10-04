@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"html/template"
 	"net/http"
 	"os"
 	"os/signal"
@@ -35,21 +34,7 @@ var (
 		sync.Mutex
 		m map[string]stateEntry
 	}{m: make(map[string]stateEntry)}
-	tpl *template.Template
 )
-
-func loadTemplates() {
-	var err error
-	tpl, err = template.ParseFS(
-		templates.FS,
-		"index.ghtml",
-		"login.ghtml",
-		"partials/*.ghtml",
-	)
-	if err != nil {
-		log.Fatalf("parse templates: %v", err)
-	}
-}
 
 func securityHeaders(next http.Handler) http.Handler {
 	csp := strings.Join([]string{
@@ -105,7 +90,7 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 		User   user.User
 	}{Authed: authed, User: u}
 
-	err := tpl.ExecuteTemplate(w, "index.ghtml", data)
+	err := templates.ExecTemplate(w, "index.ghtml", data)
 	if err != nil {
 		log.Printf("template %s execute error: %v", "index.ghtml", err)
 		http.Error(w, "template error", http.StatusInternalServerError)
@@ -126,7 +111,7 @@ func loginPageHandler(w http.ResponseWriter, r *http.Request) {
 		FakeOAuthEnabled bool
 	}{FakeOAuthEnabled: config.Cfg.FakeOAuthEnabled}
 
-	err := tpl.ExecuteTemplate(w, "login.ghtml", data)
+	err := templates.ExecTemplate(w, "login.ghtml", data)
 	if err != nil {
 		log.Printf("template %s execute error: %v", "login.ghtml", err)
 		http.Error(w, "template error", http.StatusInternalServerError)
@@ -276,7 +261,6 @@ func meHandler(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	config.Cfg.GitTag = GitTag
-	loadTemplates()
 
 	const initLua = "init.lua"
 
