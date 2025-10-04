@@ -42,9 +42,9 @@ func loadTemplates() {
 	var err error
 	tpl, err = template.ParseFS(
 		templates.FS,
-		"index.html",
-		"login.html",
-		//"partials/*.html",
+		"index.ghtml",
+		"login.ghtml",
+		"partials/*.ghtml",
 	)
 	if err != nil {
 		log.Fatalf("parse templates: %v", err)
@@ -105,9 +105,9 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 		User   user.User
 	}{Authed: authed, User: u}
 
-	err := tpl.ExecuteTemplate(w, "index.html", data)
+	err := tpl.ExecuteTemplate(w, "index.ghtml", data)
 	if err != nil {
-		log.Printf("template %s execute error: %v", "index.html", err)
+		log.Printf("template %s execute error: %v", "index.ghtml", err)
 		http.Error(w, "template error", http.StatusInternalServerError)
 	}
 }
@@ -126,9 +126,9 @@ func loginPageHandler(w http.ResponseWriter, r *http.Request) {
 		FakeOAuthEnabled bool
 	}{FakeOAuthEnabled: config.Cfg.FakeOAuthEnabled}
 
-	err := tpl.ExecuteTemplate(w, "login.html", data)
+	err := tpl.ExecuteTemplate(w, "login.ghtml", data)
 	if err != nil {
-		log.Printf("template %s execute error: %v", "login.html", err)
+		log.Printf("template %s execute error: %v", "login.ghtml", err)
 		http.Error(w, "template error", http.StatusInternalServerError)
 	}
 }

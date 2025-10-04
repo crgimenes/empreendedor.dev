@@ -4,5 +4,5 @@ package templates
 
 import "embed"
 
-//go:embed *.html
+//go:embed *.ghtml partials/*.ghtml
 var FS embed.FS

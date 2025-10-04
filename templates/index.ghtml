@@ -24,6 +24,7 @@
       href="/assets/apple-touch-icon.png"
     />
     <link rel="manifest" href="/assets/site.webmanifest" />
+    <link rel="stylesheet" href="/assets/bootstrap/css/bootstrap.min.css" />
     <link rel="stylesheet" href="/assets/style.css" />
     <title>Empreendedor.dev</title>
   </head>
@@ -40,8 +41,11 @@
           />
           <div>
             <h2>
-              Bem-vindo, {{if
-              .User.Name}}{{.User.Name}}{{else}}{{.User.Login}}{{end}}!
+              Bem-vindo, {{if .User.Name}}
+                            {{.User.Name}}
+                        {{else}}
+                            {{.User.Login}}
+                        {{end}}!
             </h2>
             <div class="meta">
               <div><strong>ID:</strong> {{.User.ID}}</div>
@@ -76,6 +80,9 @@
       </div>
       {{end}}
     </div>
+    <footer>
+        {{template "footer" .}}
+    </footer>
   </body>
 </html>
 
