@@ -1,6 +1,8 @@
 package migration
 
 import (
+	"edev/config"
+	"edev/db"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -71,4 +73,26 @@ func TestFindMigrationFile(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRunMigrations(t *testing.T) {
+	var err error
+	config.Cfg.DBFile = ":memory:"
+
+	db.Storage, err = db.New()
+	if err != nil {
+		t.Fatalf("Error on db: %s", err)
+	}
+
+	err = Run()
+	if err != nil {
+		t.Fatalf("Migration error: %v", err)
+	}
+
+	// run again to test idempotency
+	err = Run()
+	if err != nil {
+		t.Fatalf("Migration error: %v", err)
+	}
+
 }

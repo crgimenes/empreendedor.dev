@@ -57,15 +57,25 @@ func findMigrationFile(fsys fs.FS, version int) (string, error) {
 	pattern := fmt.Sprintf("%03d_*.up.sql", version)
 	matches, err := fs.Glob(fsys, pattern)
 	if err != nil {
-		return "", fmt.Errorf("failed to glob migration files using pattern %q: %w", pattern, err)
+		return "", fmt.Errorf(
+			"failed to glob migration files using pattern %q: %w",
+			pattern,
+			err)
 	}
 
 	if len(matches) == 0 {
-		return "", fmt.Errorf("no migration file matched pattern %q for version %03d", pattern, version)
+		return "", fmt.Errorf(
+			"no migration file matched pattern %q for version %03d",
+			pattern,
+			version)
 	}
 
 	if len(matches) > 1 {
-		return "", fmt.Errorf("multiple migration files matched pattern %q for version %03d: %v", pattern, version, matches)
+		return "", fmt.Errorf(
+			"multiple migration files matched pattern %q for version %03d: %v",
+			pattern,
+			version,
+			matches)
 	}
 
 	return matches[0], nil
@@ -92,13 +102,15 @@ func Run() error {
 
 	exists, err := chkTableExists(tx)
 	if err != nil {
-		return fmt.Errorf("failed to check if schema_migrations table exists: %w", err)
+		return fmt.Errorf(
+			"failed to check if schema_migrations table exists: %w", err)
 	}
 
 	if !exists {
 		err = createMigrationsTable(tx)
 		if err != nil {
-			return fmt.Errorf("failed to ensure schema_migrations table exists: %w", err)
+			return fmt.Errorf(
+				"failed to ensure schema_migrations table exists: %w", err)
 		}
 	}
 
