@@ -17,6 +17,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"edev/config"
 	"edev/log"
 	"edev/utils"
 )
@@ -104,9 +105,9 @@ const (
 )
 
 // New initializes RW/RO pools.
-// Uses config.Cfg.DatabaseURL as the SQLite path/URI; defaults to "app.db".
+// Uses config.Cfg.DBFile as the SQLite path/URI; defaults to "edev.db".
 func New() (*SQLite, error) {
-	path := "edev.db"
+	path := config.Cfg.DBFile
 	return NewWithPath(path)
 }
 

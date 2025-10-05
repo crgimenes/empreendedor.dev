@@ -12,12 +12,14 @@ type Config struct {
 	GitTag             string
 	XClientID          string
 	XClientSecret      string
+	DBFile             string
 }
 
 var Cfg = &Config{
 	Addrs:   ":3210",
 	BaseURL: "https://empreendedor.dev",
 	GitTag:  "dev",
+	DBFile:  "edev.db",
 
 	FakeOAuthRedirect: "/fake/oauth/callback",
 	FakeOAuthBaseURL:  "http://127.0.0.1:9100",

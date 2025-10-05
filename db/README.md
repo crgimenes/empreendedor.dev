@@ -17,11 +17,11 @@ The package is internal to this repository. Import it from other Go packages wit
 import "edev/db"
 ```
 
-All examples assume Go 1.22 or later.
+All examples assume Go 1.25 or later.
 
 ## Opening the database
 
-Use `db.New()` when you want to respect the configured database path (from `config.Cfg.DatabaseURL`). If no path is configured it falls back to `edev.db` in the working directory.
+Use `db.New()` when you want to respect the configured database path (from `config.Cfg.DBFile`). If no path is configured it falls back to `edev.db` in the working directory.
 
 ```go
 store, err := db.New()

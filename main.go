@@ -162,6 +162,8 @@ func runLuaFile(name string) {
 		os.Getenv("FAKE_OAUTH_CLIENT_ID"), config.Cfg.FakeOAuthClientID))
 	L.SetGlobal("FakeOAuthRedirectPath", ifEmpty(
 		os.Getenv("FAKE_OAUTH_REDIRECT_PATH"), config.Cfg.FakeOAuthRedirect))
+	L.SetGlobal("DBFile", ifEmpty(
+		os.Getenv("DB_FILE"), config.Cfg.DBFile))
 
 	// Read the Lua file.
 	b, err := os.ReadFile(filepath.Clean(name))
@@ -182,6 +184,7 @@ func runLuaFile(name string) {
 	config.Cfg.GitTag = L.MustGetString("GitTag")
 	config.Cfg.XClientID = L.MustGetString("XClientID")
 	config.Cfg.XClientSecret = L.MustGetString("XClientSecret")
+	config.Cfg.DBFile = L.MustGetString("DBFile")
 
 	if config.Cfg.FakeOAuthEnabled {
 
