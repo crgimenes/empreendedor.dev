@@ -10,9 +10,12 @@ all: build
 
 build:
 	# Build for the current OS and architecture
-	go build $(BUILD_FLAGS) -o $(BINARY_NAME) .
+	go build $(BUILD_FLAGS) -o $(BINARY_NAME)-$(shell go env GOOS)-$(shell go env GOARCH) .
 	#Linux amd64 build
 	GOOS=linux GOARCH=amd64 go build $(BUILD_FLAGS) -o $(BINARY_NAME)-linux-amd64 .
+	#FreeBSD amd64 build
+	GOOS=freebsd GOARCH=amd64 go build $(BUILD_FLAGS) -o $(BINARY_NAME)-freebsd-amd64 .
+
 
 dev:
 	go run -tags dev -trimpath .
