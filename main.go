@@ -18,6 +18,7 @@ import (
 	"edev/db"
 	"edev/log"
 	"edev/lua"
+	"edev/migration"
 	"edev/session"
 	"edev/templates"
 	"edev/user"
@@ -275,6 +276,11 @@ func main() {
 	db.Storage, err = db.New()
 	if err != nil {
 		log.Fatalf("Error on db: %s", err)
+	}
+
+	err = migration.Run()
+	if err != nil {
+		log.Fatalf("Migration error: %v", err)
 	}
 
 	mux := http.NewServeMux()

@@ -1,0 +1,125 @@
+package migration
+
+import (
+	"database/sql"
+	"embed"
+	"fmt"
+
+	"edev/db"
+	"edev/log"
+)
+
+var (
+	//go:embed *.up.sql
+	filesystem embed.FS
+)
+
+func chkTableExists(tx *db.Transaction) (bool, error) {
+	const query = `SELECT count(*)
+                       FROM sqlite_master
+                       WHERE type='table'
+                       AND name='schema_migrations'`
+	var count int
+	err := tx.QueryRow(query).Scan(&count)
+	if err != nil {
+		return false, fmt.Errorf("failed to check if schema_migrations table exists: %w", err)
+	}
+	return count > 0, nil
+}
+
+func createMigrationsTable(tx *db.Transaction) error {
+	const createTableSQL = `CREATE TABLE IF NOT EXISTS schema_migrations (
+		version INTEGER PRIMARY KEY)`
+	err := tx.Exec(createTableSQL)
+	if err != nil {
+		return fmt.Errorf("failed to create schema_migrations table: %w", err)
+	}
+	return nil
+}
+
+func getMigrationMaxTx(tx *db.Transaction) (int, error) {
+	const query = "SELECT MAX(version) FROM schema_migrations"
+	var max sql.NullInt64
+	err := tx.QueryRow(query).Scan(&max)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get max migration version: %w", err)
+	}
+
+	if !max.Valid {
+		return 0, nil
+	}
+
+	return int(max.Int64), nil
+}
+
+func Run() error {
+	files, err := filesystem.ReadDir(".")
+	if err != nil {
+		log.Fatalf("failed to read migration files: %v", err)
+	}
+
+	tx, err := db.Storage.BeginTransaction()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() {
+		if tx != nil {
+			rberr := tx.Rollback()
+			if rberr != nil {
+				log.Printf("failed to rollback transaction: %v", rberr)
+			}
+		}
+	}()
+
+	exists, err := chkTableExists(tx)
+	if err != nil {
+		return fmt.Errorf("failed to check if schema_migrations table exists: %w", err)
+	}
+
+	if !exists {
+		err = createMigrationsTable(tx)
+		if err != nil {
+			return fmt.Errorf("failed to ensure schema_migrations table exists: %w", err)
+		}
+	}
+
+	maxVersion, err := getMigrationMaxTx(tx)
+	if err != nil {
+		return fmt.Errorf("failed to get max migration version: %w", err)
+	}
+
+	maxNFiles := len(files)
+	if maxVersion >= maxNFiles {
+		log.Printf("no new migrations to apply (current version: %d)", maxVersion)
+		return tx.Commit()
+	}
+
+	log.Printf("applying migrations from version %d to %d", maxVersion+1, maxNFiles)
+
+	for i := maxVersion + 1; i <= maxNFiles; i++ {
+		filename := fmt.Sprintf("%03d.up.sql", i)
+		file, err := filesystem.ReadFile(filename)
+		if err != nil {
+			return fmt.Errorf("failed to read migration file %s: %w", filename, err)
+		}
+
+		err = tx.Exec(string(file))
+		if err != nil {
+			return fmt.Errorf("failed to apply migration %s: %w", filename, err)
+		}
+
+		err = tx.Exec("INSERT INTO schema_migrations (version) VALUES (?)", i)
+		if err != nil {
+			return fmt.Errorf("failed to record migration version %d: %w", i, err)
+		}
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	tx = nil
+
+	return nil
+}
