@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"embed"
 	"fmt"
+	"io/fs"
 
 	"edev/db"
 	"edev/log"
@@ -52,6 +53,24 @@ func getMigrationMaxTx(tx *db.Transaction) (int, error) {
 	return int(max.Int64), nil
 }
 
+func findMigrationFile(fsys fs.FS, version int) (string, error) {
+	pattern := fmt.Sprintf("%03d_*.up.sql", version)
+	matches, err := fs.Glob(fsys, pattern)
+	if err != nil {
+		return "", fmt.Errorf("failed to glob migration files using pattern %q: %w", pattern, err)
+	}
+
+	if len(matches) == 0 {
+		return "", fmt.Errorf("no migration file matched pattern %q for version %03d", pattern, version)
+	}
+
+	if len(matches) > 1 {
+		return "", fmt.Errorf("multiple migration files matched pattern %q for version %03d: %v", pattern, version, matches)
+	}
+
+	return matches[0], nil
+}
+
 func Run() error {
 	files, err := filesystem.ReadDir(".")
 	if err != nil {
@@ -97,7 +116,11 @@ func Run() error {
 	log.Printf("applying migrations from version %d to %d", maxVersion+1, maxNFiles)
 
 	for i := maxVersion + 1; i <= maxNFiles; i++ {
-		filename := fmt.Sprintf("%03d.up.sql", i)
+		filename, err := findMigrationFile(filesystem, i)
+		if err != nil {
+			return fmt.Errorf("failed to locate migration for version %d: %w", i, err)
+		}
+
 		file, err := filesystem.ReadFile(filename)
 		if err != nil {
 			return fmt.Errorf("failed to read migration file %s: %w", filename, err)
