@@ -8,8 +8,8 @@ import (
 func loadTemplates() *template.Template {
 	tpl, err := template.ParseFS(
 		filesystem,
-		"*.ghtml",
-		"partials/*.ghtml",
+		"*.go.tmpl",
+		"partials/*.go.tmpl",
 	)
 	if err != nil {
 		log.Fatalf("parse templates: %v", err)

@@ -1,20 +1,8 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="pt-BR" data-bs-theme="dark">
 
 <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#000000" />
-    <meta name="description" content="Escolha um provedor OAuth para entrar." />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <link rel="icon" type="image/png" href="/assets/favicon-96x96.png" sizes="96x96" />
-    <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg" />
-    <link rel="shortcut icon" href="/assets/favicon.ico" />
-    <link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png" />
-    <link rel="manifest" href="/assets/site.webmanifest" />
-    <link rel="stylesheet" href="/assets/style.css" />
-    <title>Escolha um provedor</title>
+    {{template "head" .}}
 </head>
 
 <body>
@@ -52,6 +40,10 @@
             Ao prosseguir, você concorda com o uso de cookies de sessão.
         </div>
     </div>
+    <footer>
+        {{template "footer" .}}
+    </footer>
+
 </body>
 
 </html>

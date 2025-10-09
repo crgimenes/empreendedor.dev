@@ -91,9 +91,9 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 		User   user.User
 	}{Authed: authed, User: u}
 
-	err := templates.ExecuteTemplate(w, "index.ghtml", data)
+	err := templates.ExecuteTemplate(w, "index.go.tmpl", data)
 	if err != nil {
-		log.Printf("template %s execute error: %v", "index.ghtml", err)
+		log.Printf("template %s execute error: %v", "index.go.tmpl", err)
 		http.Error(w, "template error", http.StatusInternalServerError)
 	}
 }
@@ -112,9 +112,9 @@ func loginPageHandler(w http.ResponseWriter, r *http.Request) {
 		FakeOAuthEnabled bool
 	}{FakeOAuthEnabled: config.Cfg.FakeOAuthEnabled}
 
-	err := templates.ExecuteTemplate(w, "login.ghtml", data)
+	err := templates.ExecuteTemplate(w, "login.go.tmpl", data)
 	if err != nil {
-		log.Printf("template %s execute error: %v", "login.ghtml", err)
+		log.Printf("template %s execute error: %v", "login.go.tmpl", err)
 		http.Error(w, "template error", http.StatusInternalServerError)
 	}
 }

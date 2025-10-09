@@ -8,7 +8,7 @@ import (
 )
 
 var (
-	//go:embed *.ghtml partials/*.ghtml
+	//go:embed *.go.tmpl partials/*.go.tmpl
 	filesystem embed.FS
 
 	tpl = loadTemplates()
