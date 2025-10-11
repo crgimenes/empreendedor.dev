@@ -89,7 +89,12 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 	data := struct {
 		Authed bool
 		User   user.User
-	}{Authed: authed, User: u}
+		Config config.Config
+	}{
+		Authed: authed,
+		User:   u,
+		Config: *config.Cfg,
+	}
 
 	err := templates.ExecuteTemplate(w, "index.go.tmpl", data)
 	if err != nil {
@@ -109,8 +114,10 @@ func loginPageHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := struct {
-		FakeOAuthEnabled bool
-	}{FakeOAuthEnabled: config.Cfg.FakeOAuthEnabled}
+		Config config.Config
+	}{
+		Config: *config.Cfg,
+	}
 
 	err := templates.ExecuteTemplate(w, "login.go.tmpl", data)
 	if err != nil {
@@ -151,10 +158,15 @@ func runLuaFile(name string) {
 	L.SetGlobal("GitTag", ifEmpty(GitTag, config.Cfg.GitTag))
 	L.SetGlobal("BaseURL", ifEmpty(os.Getenv("BASE_URL"), config.Cfg.BaseURL))
 	L.SetGlobal("Address", ifEmpty(os.Getenv("ADDRESS"), config.Cfg.Addrs))
+
+	L.SetGlobal("GithubOAuthEnabled", os.Getenv("GITHUB_OAUTH_ENABLED") == "true")
 	L.SetGlobal("GitHubClientID", os.Getenv("GITHUB_CLIENT_ID"))
 	L.SetGlobal("GitHubClientSecret", os.Getenv("GITHUB_CLIENT_SECRET"))
+
+	L.SetGlobal("XOAuthEnabled", os.Getenv("X_OAUTH_ENABLED") == "true")
 	L.SetGlobal("XClientID", os.Getenv("X_CLIENT_ID"))
 	L.SetGlobal("XClientSecret", os.Getenv("X_CLIENT_SECRET"))
+
 	L.SetGlobal("FakeOAuthEnabled", os.Getenv("FAKE_OAUTH_ENABLED") == "true")
 	L.SetGlobal("FakeOAuthBaseURL", ifEmpty(
 		os.Getenv("FAKE_OAUTH_BASE_URL"), config.Cfg.FakeOAuthBaseURL))
@@ -162,6 +174,7 @@ func runLuaFile(name string) {
 		os.Getenv("FAKE_OAUTH_CLIENT_ID"), config.Cfg.FakeOAuthClientID))
 	L.SetGlobal("FakeOAuthRedirectPath", ifEmpty(
 		os.Getenv("FAKE_OAUTH_REDIRECT_PATH"), config.Cfg.FakeOAuthRedirect))
+
 	L.SetGlobal("DBFile", ifEmpty(
 		os.Getenv("DB_FILE"), config.Cfg.DBFile))
 
@@ -179,9 +192,13 @@ func runLuaFile(name string) {
 	config.Cfg.Addrs = L.MustGetString("Address")
 	config.Cfg.BaseURL = L.MustGetString("BaseURL")
 	config.Cfg.FakeOAuthEnabled = L.MustGetBool("FakeOAuthEnabled")
+
+	config.Cfg.GithubOAuthEnabled = L.MustGetBool("GithubOAuthEnabled")
 	config.Cfg.GitHubClientID = L.MustGetString("GitHubClientID")
 	config.Cfg.GitHubClientSecret = L.MustGetString("GitHubClientSecret")
 	config.Cfg.GitTag = L.MustGetString("GitTag")
+
+	config.Cfg.XOAuthEnabled = L.MustGetBool("XOAuthEnabled")
 	config.Cfg.XClientID = L.MustGetString("XClientID")
 	config.Cfg.XClientSecret = L.MustGetString("XClientSecret")
 	config.Cfg.DBFile = L.MustGetString("DBFile")
@@ -299,13 +316,19 @@ func main() {
 	mux.HandleFunc("/login", loginPageHandler)
 	mux.HandleFunc("/healthz", healthHandler)
 
-	mux.HandleFunc("/login/github", gitHubProvider.LoginHandler)
-	mux.HandleFunc("/login/x", xProvider.LoginHandler)
+	if config.Cfg.GithubOAuthEnabled {
+		mux.HandleFunc("/login/github", gitHubProvider.LoginHandler)
+	}
+
+	if config.Cfg.XOAuthEnabled {
+		mux.HandleFunc("/login/x", xProvider.LoginHandler)
+	}
 
 	if config.Cfg.FakeOAuthEnabled {
 		mux.HandleFunc("/login/fake", fakeProvider.LoginHandler)
 		mux.HandleFunc(config.Cfg.FakeOAuthRedirect, fakeProvider.CallbackHandler)
 	}
+
 	mux.HandleFunc("/logout", logoutHandler)
 	mux.HandleFunc("/me", meHandler)
 

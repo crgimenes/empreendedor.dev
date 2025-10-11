@@ -7,9 +7,11 @@ type Config struct {
 	FakeOAuthClientID  string
 	FakeOAuthEnabled   bool
 	FakeOAuthRedirect  string
+	GithubOAuthEnabled bool
 	GitHubClientID     string
 	GitHubClientSecret string
 	GitTag             string
+	XOAuthEnabled      bool
 	XClientID          string
 	XClientSecret      string
 	DBFile             string

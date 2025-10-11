@@ -23,6 +23,15 @@ local function getEnv(name, default)
 end
 
 Address = ":3210"
+
+GithubOAuthEnabled = true
+GitHubClientID = getEnv("GITHUB_CLIENT_ID", "")
+GitHubClientSecret = getEnv("GITHUB_CLIENT_SECRET", "")
+
+XOAuthEnabled = false
+XClientID = getEnv("X_CLIENT_ID", "")
+XClientSecret = getEnv("X_CLIENT_SECRET", "")
+
 GitHubClientID = getEnv("GITHUB_CLIENT_ID", "")
 GitHubClientSecret = getEnv("GITHUB_CLIENT_SECRET", "")
 
