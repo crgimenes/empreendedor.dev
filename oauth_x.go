@@ -96,7 +96,11 @@ func (p XProvider) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 	if resp.StatusCode == http.StatusForbidden {
 		log.Printf("API v2 returned 403, trying fallback to API v1.1")
 
-		req, _ = http.NewRequestWithContext(ctx, "GET", "https://api.x.com/1.1/account/verify_credentials.json", nil)
+		req, _ = http.NewRequestWithContext(
+			ctx,
+			"GET",
+			"https://api.x.com/1.1/account/verify_credentials.json",
+			nil)
 		req.Header.Set("Accept", "application/json")
 
 		resp, err = client.Do(req)

@@ -62,7 +62,13 @@ func loggingMiddleware(next http.Handler) http.Handler {
 		rw := &respWriter{ResponseWriter: w, status: 200}
 		next.ServeHTTP(rw, r)
 		dur := time.Since(start)
-		log.Printf("request method=%s path=%s status=%d dur_ms=%s remote=%s", r.Method, r.URL.Path, rw.status, strconv.FormatInt(dur.Milliseconds(), 10), r.RemoteAddr)
+		log.Printf(
+			"request method=%s path=%s status=%d dur_ms=%s remote=%s",
+			r.Method,
+			r.URL.Path,
+			rw.status,
+			strconv.FormatInt(dur.Milliseconds(), 10),
+			r.RemoteAddr)
 	})
 }
 
@@ -318,10 +324,12 @@ func main() {
 
 	if config.Cfg.GithubOAuthEnabled {
 		mux.HandleFunc("/login/github", gitHubProvider.LoginHandler)
+		mux.HandleFunc("/github/oauth/callback", gitHubProvider.CallbackHandler)
 	}
 
 	if config.Cfg.XOAuthEnabled {
 		mux.HandleFunc("/login/x", xProvider.LoginHandler)
+		mux.HandleFunc("/x/oauth/callback", xProvider.CallbackHandler)
 	}
 
 	if config.Cfg.FakeOAuthEnabled {
@@ -331,9 +339,6 @@ func main() {
 
 	mux.HandleFunc("/logout", logoutHandler)
 	mux.HandleFunc("/me", meHandler)
-
-	mux.HandleFunc("/github/oauth/callback", gitHubProvider.CallbackHandler)
-	mux.HandleFunc("/x/oauth/callback", xProvider.CallbackHandler)
 
 	srv := &http.Server{
 		Addr:              config.Cfg.Addrs,
