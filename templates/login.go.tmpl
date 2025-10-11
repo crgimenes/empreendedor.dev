@@ -1,11 +1,10 @@
 <!doctype html>
 <html lang="pt-BR" data-bs-theme="dark">
+    <head>
+        {{template "head" .}}
+    </head>
 
-<head>
-    {{template "head" .}}
-</head>
-
-<body>
+    <body>
     <div class="container">
         <div class="card grid">
             <h1>Escolha um provedor</h1>
@@ -47,7 +46,7 @@
     <footer>
         {{template "footer" .}}
     </footer>
-
+    {{template "scripts" .}}
 </body>
 
 </html>
