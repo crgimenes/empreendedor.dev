@@ -307,3 +307,30 @@ func (s *SQLite) Close() {
 	utils.Closer(s.ro)
 	utils.Closer(s.rw)
 }
+
+// Get user by oauth provider id.
+func (s *SQLite) GetUserByOAuthProviderID(provider string, providerID string) (int64, error) {
+	const sqlStatement = `SELECT
+			u.id
+		FROM users u
+		JOIN identities i ON u.id = i.user_id
+		WHERE i.provider = ?    -- 1
+		AND i.provider_uid = ?  -- 2
+		AND u.enabled = 1
+		LIMIT 1;`
+
+	row := s.QueryRow(
+		sqlStatement,
+		provider,   // 1
+		providerID, // 2
+	)
+	var userID int64
+	err := row.Scan(&userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, nil // No user found
+		}
+		return 0, err
+	}
+	return userID, nil
+}
