@@ -22,9 +22,6 @@ import (
 	"edev/utils"
 )
 
-// Storage keeps a global handle for convenience (preserves your original pattern).
-var Storage *SQLite
-
 // SQLite holds separate read/write pools.
 type SQLite struct {
 	rw *sql.DB // single-writer pool
@@ -43,6 +40,13 @@ type Row struct {
 	once   sync.Once
 	err    error
 }
+
+var (
+	// Storage keeps a global handle for convenience (preserves your original pattern).
+	Storage *SQLite
+
+	ErrNoRows = sql.ErrNoRows
+)
 
 func newRow(row *sql.Row, cancel context.CancelFunc) *Row {
 	return &Row{row: row, cancel: cancel}
