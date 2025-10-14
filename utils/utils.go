@@ -39,6 +39,19 @@ func NewOpaqueID() string {
 	return b64urlNoPad(randBytes(32))
 }
 
+func RandomString(n int) string {
+	const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	b := make([]byte, n)
+	_, err := rand.Read(b)
+	if err != nil {
+		panic(err)
+	}
+	for i := range n {
+		b[i] = letters[int(b[i])%len(letters)]
+	}
+	return string(b)
+}
+
 // PKCE S256 (Proof Key for Code Exchange)
 func MakePKCE() (verifier, challenge string) {
 	verifier = b64urlNoPad(randBytes(32))
