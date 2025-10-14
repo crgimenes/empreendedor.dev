@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -52,23 +51,6 @@ func securityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("Content-Security-Policy", csp)
 
 		next.ServeHTTP(w, r)
-	})
-}
-
-// loggingMiddleware logs method, path, status and duration for each request.
-func loggingMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		rw := &respWriter{ResponseWriter: w, status: 200}
-		next.ServeHTTP(rw, r)
-		dur := time.Since(start)
-		log.Printf(
-			"request method=%s path=%s status=%d dur_ms=%s remote=%s",
-			r.Method,
-			r.URL.Path,
-			rw.status,
-			strconv.FormatInt(dur.Milliseconds(), 10),
-			r.RemoteAddr)
 	})
 }
 
@@ -342,7 +324,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              config.Cfg.Addrs,
-		Handler:           loggingMiddleware(securityHeaders(mux)),
+		Handler:           securityHeaders(mux),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      15 * time.Second,
