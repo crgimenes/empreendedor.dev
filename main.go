@@ -166,6 +166,9 @@ func runLuaFile(name string) {
 	L.SetGlobal("DBFile", ifEmpty(
 		os.Getenv("DB_FILE"), config.Cfg.DBFile))
 
+	L.SetGlobal("ResendAPIKey", ifEmpty(
+		os.Getenv("RESEND_API_KEY"), config.Cfg.ResendAPIKey))
+
 	// Read the Lua file.
 	b, err := os.ReadFile(filepath.Clean(name))
 	if err != nil {
@@ -200,16 +203,7 @@ func runLuaFile(name string) {
 		config.Cfg.FakeOAuthRedirect = L.MustGetString("FakeOAuthRedirectPath")
 	}
 
-	// Allow missing real providers if fake OAuth is enabled (for local tests).
-	if !config.Cfg.FakeOAuthEnabled {
-		if config.Cfg.GitHubClientID == "" ||
-			config.Cfg.GitHubClientSecret == "" ||
-			config.Cfg.XClientID == "" ||
-			config.Cfg.XClientSecret == "" {
-			log.Fatal("Missing OAuth2 client ID/secret in configuration")
-		}
-	}
-
+	config.Cfg.ResendAPIKey = L.MustGetString("ResendAPIKey")
 }
 
 func putState(st, verifier string, ttl time.Duration) {
