@@ -8,7 +8,9 @@
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY,
     username TEXT NOT NULL UNIQUE,
-    enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0,1)),
+    email TEXT NOT NULL UNIQUE,
+    enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0,1)),
+    avatar_url TEXT,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -37,4 +39,16 @@ AFTER UPDATE OF user_id, provider, provider_uid, avatar_url ON identities
 BEGIN
     UPDATE identities SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
 END;
+
+--
+
+CREATE TABLE IF NOT EXISTS magic_token (
+    id INTEGER PRIMARY KEY,
+    email TEXT NOT NULL,
+    token TEXT NOT NULL UNIQUE,
+    action TEXT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at DATETIME NOT NULL DEFAULT (DATETIME('now', '+3 hour'))
+);
+
 

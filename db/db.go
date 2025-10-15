@@ -315,13 +315,13 @@ func (s *SQLite) Close() {
 // Get user by oauth provider id.
 func (s *SQLite) GetUserByOAuthProviderID(provider string, providerID string) (int64, error) {
 	const sqlStatement = `SELECT
-			u.id
-		FROM users u
-		JOIN identities i ON u.id = i.user_id
-		WHERE i.provider = ?    -- 1
-		AND i.provider_uid = ?  -- 2
-		AND u.enabled = 1
-		LIMIT 1;`
+            u.id
+        FROM users u
+        JOIN identities i ON u.id = i.user_id
+        WHERE i.provider = ?    -- 1
+        AND i.provider_uid = ?  -- 2
+        AND u.enabled = 1
+        LIMIT 1;`
 
 	row := s.QueryRow(
 		sqlStatement,
@@ -337,4 +337,28 @@ func (s *SQLite) GetUserByOAuthProviderID(provider string, providerID string) (i
 		return 0, err
 	}
 	return userID, nil
+}
+
+func (s *SQLite) StoreMagicLinkToken(
+	token string,
+	email string,
+	expiresAt time.Time) error {
+	const sqlStatement = `INSERT INTO magic_token (
+            email,
+            token,
+            expires_at,
+            action
+        VALUES (
+            ?,        -- 1
+            ?,        -- 2
+            ?,        -- 3
+            'login'   -- action
+        );`
+
+	return s.Exec(
+		sqlStatement,
+		email,     // 1
+		token,     // 2
+		expiresAt, // 3
+	)
 }

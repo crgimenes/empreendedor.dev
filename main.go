@@ -17,10 +17,12 @@ import (
 	"edev/db"
 	"edev/log"
 	"edev/lua"
+	"edev/mail"
 	"edev/migration"
 	"edev/session"
 	"edev/templates"
 	"edev/user"
+	"edev/utils"
 )
 
 type stateEntry struct {
@@ -262,6 +264,64 @@ func meHandler(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(u)
 }
 
+func handlerLink(w http.ResponseWriter, r *http.Request) {
+}
+
+func handlerLoginMagic(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	w.Header().Set("Cache-Control", "no-store")
+	if r.Method != "POST" {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	err := r.ParseForm()
+	if err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	email := r.FormValue("email")
+	if email == "" {
+		http.Error(w, "email is required", http.StatusBadRequest)
+		return
+	}
+
+	// TODO: validate email format (simple)
+
+	// generate a random token
+	token := utils.RandomString(16)
+
+	// store the token with the email and expiration (15 minutes)
+	err = db.Storage.StoreMagicLinkToken(token, email, time.Now().Add(15*time.Minute))
+	if err != nil {
+		log.Printf("error storing magic link token: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// send the email with the link
+	link := config.Cfg.BaseURL + "/link/" + token
+	ret, err := mail.Send(mail.EmailRequest{
+		From:    "noreply@" + strings.TrimPrefix(config.Cfg.BaseURL, "https://"),
+		To:      []string{email},
+		Subject: "Your magic login link",
+		Text: "Click the link to log in: " +
+			link +
+			"\nThis link will expire in 15 minutes.\n--\nEdev",
+	})
+	if err != nil {
+		log.Printf("error sending magic link email: %v", err)
+		// do not reveal the error to the user
+	}
+
+	log.Printf("sent magic link email to %s, id=%s", email, ret)
+
+	// always respond with 200 OK
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`{"status":"ok"}`))
+
+}
+
 func main() {
 	config.Cfg.GitTag = GitTag
 
@@ -296,7 +356,10 @@ func main() {
 	})
 	mux.HandleFunc("/", indexHandler)
 	mux.HandleFunc("/login", loginPageHandler)
+	mux.HandleFunc("POST /login/magic_link", handlerLoginMagic) // for email link login and magic link
+
 	mux.HandleFunc("/healthz", healthHandler)
+	mux.HandleFunc("GET /link/{token}", handlerLink) // for email link login and magic link
 
 	if config.Cfg.GithubOAuthEnabled {
 		mux.HandleFunc("/login/github", gitHubProvider.LoginHandler)
