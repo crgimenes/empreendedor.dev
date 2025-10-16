@@ -5,60 +5,27 @@
   </head>
 
   <body>
-    <div class="container">
-      {{if .Authed}}
-      <div class="card grid">
-        <div class="row">
-          <img
-            class="avatar"
-            src="{{.User.AvatarURL}}"
-            alt="Avatar do usuário"
-          />
-          <div>
-            <h2>
-              Bem-vindo, {{if .User.Name}}
-                            {{.User.Name}}
-                        {{else}}
-                            {{.User.Login}}
-                        {{end}}!
-            </h2>
-            <div class="meta">
-              <div><strong>ID:</strong> {{.User.ID}}</div>
-              {{if .User.Login}}
-              <div><strong>Login:</strong> {{.User.Login}}</div>
-              {{end}}
-            </div>
-          </div>
-        </div>
-
-        <div class="row">
-          <a class="btn btn-logout" href="/logout" rel="nofollow">Sair</a>
-          <a class="btn" href="/me" rel="nofollow" title="Ver JSON da sessão">
-            <span class="kbd">GET</span> <strong>/me</strong>
-          </a>
-        </div>
-
-        <p>
-          Você está autenticado. Use o endpoint
-          <span class="kbd">/me</span> para inspecionar os dados de sessão.
-        </p>
-      </div>
+      {{if .User.Login}}
+        <img src="{{.User.AvatarURL}}" alt="Avatar do usuário" />
+        <h2>
+          Bem-vindo, {{if .User.Name}}
+                        {{.User.Name}}
+                    {{else}}
+                        {{.User.Login}}
+                    {{end}}!
+        </h2>
+        <strong>ID:</strong> {{.User.ID}}
+          <strong>Login:</strong> {{.User.Login}}
+        <a href="/logout" rel="nofollow">Sair</a>
       {{else}}
-      <div class="card grid hero">
-        <h1>Empreendedor.dev</h1>
-        <p>Teste de pagina inicial.</p>
-        <div class="row">
-          <a class="btn btn-primary" href="/login" rel="nofollow"
-            >Ir para login</a
-          >
-        </div>
-      </div>
+          <p>Teste de pagina inicial.</p>
+          <a href="/login" rel="nofollow">Ir para login</a>
       {{end}}
-    </div>
-    <footer>
-        {{template "footer" .}}
-    </footer>
-    {{template "scripts" .}}
+    
+      <footer>
+          {{template "footer" .}}
+      </footer>
+      {{template "scripts" .}}
   </body>
 </html>
 
