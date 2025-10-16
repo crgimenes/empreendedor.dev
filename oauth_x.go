@@ -11,7 +11,6 @@ import (
 	"edev/config"
 	"edev/log"
 	"edev/session"
-	"edev/user"
 	"edev/utils"
 
 	"golang.org/x/oauth2"
@@ -142,12 +141,16 @@ func (p XProvider) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 			xuLegacy.ID, xuLegacy.ScreenName, xuLegacy.Name, xuLegacy.ProfileImageURL)
 
 		sid := utils.NewOpaqueID()
-		session.Put(sid, user.User{
-			ID:        xuLegacy.ID,
-			Login:     xuLegacy.ScreenName,
-			Name:      xuLegacy.Name,
-			AvatarURL: xuLegacy.ProfileImageURL,
-		})
+		/*
+			// TODO: find user in X provider and if not found create it
+
+			session.Put(sid, user.User{
+				ID:        xuLegacy.ID,
+				Login:     xuLegacy.ScreenName,
+				Name:      xuLegacy.Name,
+				AvatarURL: xuLegacy.ProfileImageURL,
+			})
+		*/
 		session.SetCookie(w, sid, 8*time.Hour)
 		http.Redirect(w, r, config.Cfg.BaseURL+"/", http.StatusFound)
 		return
@@ -183,12 +186,15 @@ func (p XProvider) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 		xu.Data.ID, xu.Data.Username, xu.Data.Name, xu.Data.ProfileImageURL)
 
 	sid := utils.NewOpaqueID()
-	session.Put(sid, user.User{
-		ID:        xu.Data.ID,
-		Login:     xu.Data.Username,
-		Name:      xu.Data.Name,
-		AvatarURL: xu.Data.ProfileImageURL,
-	})
+	/*
+		// TODO: find user in X provider and if not found create it
+			session.Put(sid, user.User{
+				ID:        xu.Data.ID,
+				Login:     xu.Data.Username,
+				Name:      xu.Data.Name,
+				AvatarURL: xu.Data.ProfileImageURL,
+			})
+	*/
 	session.SetCookie(w, sid, 8*time.Hour)
 
 	http.Redirect(w, r, config.Cfg.BaseURL+"/", http.StatusFound)

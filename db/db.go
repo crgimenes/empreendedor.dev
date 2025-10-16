@@ -19,6 +19,7 @@ import (
 
 	"edev/config"
 	"edev/log"
+	"edev/user"
 	"edev/utils"
 )
 
@@ -361,4 +362,106 @@ func (s *SQLite) StoreMagicLinkToken(
 		token,     // 2
 		expiresAt, // 3
 	)
+}
+
+func (s *SQLite) ConsumeMagicLinkToken(token string) (string, error) {
+	const sqlSelect = `SELECT
+			email
+		FROM magic_token
+		WHERE token = ?          -- 1
+		AND expires_at > CURRENT_TIMESTAMP
+		LIMIT 1;`
+
+	var email string
+	err := s.QueryRow(
+		sqlSelect,
+		token, // 1
+	).Scan(&email)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", nil // No token found
+		}
+		return "", err
+	}
+
+	const sqlDelete = `DELETE FROM magic_token
+		WHERE token = ?;` // 1
+
+	err = s.Exec(
+		sqlDelete,
+		token, // 1
+	)
+	if err != nil {
+		return "", err
+	}
+
+	return email, nil
+}
+
+func (s *SQLite) PurgeExpiredMagicLinkTokens() error {
+	const sqlStatement = `DELETE FROM magic_token
+		WHERE expires_at <= CURRENT_TIMESTAMP;`
+
+	return s.Exec(sqlStatement)
+}
+
+func (s *SQLite) GetUserOrCreateByEmail(email string) (*user.User, error) {
+	const sqlSelect = `SELECT
+			id,
+			username,
+			email,
+			avatar_url,
+			enabled
+		FROM users
+		WHERE email = ?  -- 1
+		LIMIT 1;`
+
+	var u user.User
+
+	err := s.QueryRow(
+		sqlSelect,
+		email, // 1
+	).Scan(
+		&u.ID,
+		&u.Username,
+		&u.Email,
+		&u.AvatarURL,
+		&u.Enabled,
+	)
+	if err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			return nil, err
+		}
+	}
+
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
+	}
+
+	const sqlInsert = `INSERT INTO users (
+			email,
+			enabled,
+			created_at,
+			updated_at
+		) VALUES (
+			?,                 -- 1
+			1,                 -- if created via magic link, enable by default
+			CURRENT_TIMESTAMP, -- created_at
+			CURRENT_TIMESTAMP  -- updated_at
+		)
+		RETURNING id;`
+
+	err = s.QueryRow(
+		sqlInsert,
+		email, // 1
+	).Scan(&u.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	u.AvatarURL = ""
+	u.Enabled = true
+	u.Email = email
+
+	return &u, nil
 }

@@ -11,7 +11,6 @@ import (
 	"edev/config"
 	"edev/log"
 	"edev/session"
-	"edev/user"
 	"edev/utils"
 
 	"golang.org/x/oauth2"
@@ -125,12 +124,16 @@ func (p GitHubProvider) CallbackHandler(w http.ResponseWriter, r *http.Request) 
 		gu.ID, gu.Login, gu.Name, gu.AvatarURL)
 
 	sid := utils.NewOpaqueID()
-	session.Put(sid, user.User{
-		ID:        fmt.Sprintf("%d", gu.ID),
-		Login:     gu.Login,
-		Name:      gu.Name,
-		AvatarURL: gu.AvatarURL,
-	})
+
+	/*
+		// TODO: find user im github oauth provider, then create user if not exist or return existing user
+		session.Put(sid, user.User{
+			ID:        fmt.Sprintf("%d", gu.ID),
+			Login:     gu.Login,
+			Name:      gu.Name,
+			AvatarURL: gu.AvatarURL,
+		})
+	*/
 	session.SetCookie(w, sid, 8*time.Hour)
 
 	http.Redirect(w, r, config.Cfg.BaseURL+"/", http.StatusFound)

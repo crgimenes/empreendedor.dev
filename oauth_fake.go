@@ -93,13 +93,20 @@ func (FakeProvider) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "userinfo status", http.StatusBadGateway)
 		return
 	}
-	var raw map[string]string
+	var raw map[string]any
 	if err := json.NewDecoder(uiResp.Body).Decode(&raw); err != nil {
 		http.Error(w, "decode userinfo", http.StatusBadGateway)
 		return
 	}
+
 	sid := utils.NewOpaqueID()
-	session.Put(sid, user.User{ID: raw["id"], Login: raw["username"], Name: raw["name"], AvatarURL: raw["avatar_url"]})
+	session.Put(sid, user.User{
+		ID:        1,                        // TODO: insert user if not exist in current provider
+		Username:  raw["username"].(string), // TODO: prevent collision
+		Email:     raw["email"].(string),
+		Enabled:   true,
+		AvatarURL: raw["avatar_url"].(string),
+	})
 	session.SetCookie(w, sid, 8*time.Hour)
 	http.Redirect(w, r, config.Cfg.BaseURL+"/", http.StatusFound)
 }

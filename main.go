@@ -249,6 +249,12 @@ func logoutHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func meHandler(w http.ResponseWriter, r *http.Request) {
+	// TODO: Create 'prelude' middleware to check authentication
+	// and use it for other handlers that require auth
+	// e.g. /me, /logout, etc.
+
+	// TODO: show form with user info and allow updating profile
+
 	w.Header().Set("Cache-Control", "no-store")
 	sid, ok := session.GetCookie(r)
 	if !ok {
@@ -265,6 +271,48 @@ func meHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func handlerLink(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	token := r.PathValue("token")
+
+	if token == "" {
+		http.Error(w, "token is required", http.StatusBadRequest)
+		return
+	}
+
+	email, err := db.Storage.ConsumeMagicLinkToken(token)
+	if err != nil {
+		log.Printf("error consuming magic link token: %v", err)
+		http.Error(w, "invalid or expired token", http.StatusBadRequest)
+		return
+	}
+	if email == "" {
+		http.Error(w, "invalid or expired token", http.StatusBadRequest)
+		return
+	}
+
+	u, err := db.Storage.GetUserOrCreateByEmail(email)
+	if err != nil {
+		log.Printf("error getting or creating user by email: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	sid := utils.NewOpaqueID()
+	session.Put(sid, *u)
+	session.SetCookie(w, sid, 24*3600) // 1 day TODO: make configurable
+
+	log.Printf("user %s logged in via magic link", u.Email)
+
+	if u.Username == "" {
+		log.Printf("user %s has no username, redirecting to /me", u.Email)
+		// redirect to complete profile
+		http.Redirect(w, r, config.Cfg.BaseURL+"/me", http.StatusFound)
+		return
+	}
+
+	// redirect to home
+	http.Redirect(w, r, config.Cfg.BaseURL+"/", http.StatusFound)
+
 }
 
 func handlerLoginMagic(w http.ResponseWriter, r *http.Request) {
@@ -344,6 +392,16 @@ func main() {
 	if err != nil {
 		log.Fatalf("Migration error: %v", err)
 	}
+
+	go func() {
+		for {
+			time.Sleep(1 * time.Hour)
+			err := db.Storage.PurgeExpiredMagicLinkTokens()
+			if err != nil {
+				log.Printf("Error purging expired magic link tokens: %v", err)
+			}
+		}
+	}()
 
 	mux := http.NewServeMux()
 
