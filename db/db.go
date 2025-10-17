@@ -19,6 +19,7 @@ import (
 
 	"edev/config"
 	"edev/log"
+	"edev/mail"
 	"edev/user"
 	"edev/utils"
 )
@@ -418,7 +419,12 @@ func (s *SQLite) GetUserOrCreateByEmail(email string) (*user.User, error) {
 
 	var u user.User
 
-	err := s.QueryRow(
+	email, err := mail.CanonicalizeEmail(email)
+	if err != nil {
+		return nil, err
+	}
+
+	err = s.QueryRow(
 		sqlSelect,
 		email, // 1
 	).Scan(

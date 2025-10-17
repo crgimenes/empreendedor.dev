@@ -253,6 +253,8 @@ func meHandler(w http.ResponseWriter, r *http.Request) {
 	// and use it for other handlers that require auth
 	// e.g. /me, /logout, etc.
 
+	// TODO: change error response to show html page insted of simple server response.
+
 	// TODO: show form with user info and allow updating profile
 
 	w.Header().Set("Cache-Control", "no-store")
@@ -334,7 +336,11 @@ func handlerLoginMagic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: validate email format (simple)
+	email, err = mail.CanonicalizeEmail(email)
+	if err != nil {
+		http.Error(w, "invalid email", http.StatusBadRequest)
+		return
+	}
 
 	// generate a random token
 	token := utils.RandomString(16)
