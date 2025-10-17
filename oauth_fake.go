@@ -107,6 +107,6 @@ func (FakeProvider) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 		Enabled:   true,
 		AvatarURL: raw["avatar_url"].(string),
 	})
-	session.SetCookie(w, sid, 8*time.Hour)
+	session.SetCookie(w, sid, config.Cfg.SessionDuration)
 	http.Redirect(w, r, config.Cfg.BaseURL+"/", http.StatusFound)
 }

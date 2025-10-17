@@ -301,7 +301,7 @@ func handlerLink(w http.ResponseWriter, r *http.Request) {
 
 	sid := utils.NewOpaqueID()
 	session.Put(sid, *u)
-	session.SetCookie(w, sid, 24*3600) // 1 day TODO: make configurable
+	session.SetCookie(w, sid, config.Cfg.SessionDuration)
 
 	log.Printf("user %s logged in via magic link", u.Email)
 

@@ -134,7 +134,7 @@ func (p GitHubProvider) CallbackHandler(w http.ResponseWriter, r *http.Request) 
 			AvatarURL: gu.AvatarURL,
 		})
 	*/
-	session.SetCookie(w, sid, 8*time.Hour)
+	session.SetCookie(w, sid, config.Cfg.SessionDuration)
 
 	http.Redirect(w, r, config.Cfg.BaseURL+"/", http.StatusFound)
 }

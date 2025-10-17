@@ -151,7 +151,7 @@ func (p XProvider) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 				AvatarURL: xuLegacy.ProfileImageURL,
 			})
 		*/
-		session.SetCookie(w, sid, 8*time.Hour)
+		session.SetCookie(w, sid, config.Cfg.SessionDuration)
 		http.Redirect(w, r, config.Cfg.BaseURL+"/", http.StatusFound)
 		return
 	}
@@ -195,7 +195,7 @@ func (p XProvider) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 				AvatarURL: xu.Data.ProfileImageURL,
 			})
 	*/
-	session.SetCookie(w, sid, 8*time.Hour)
+	session.SetCookie(w, sid, config.Cfg.SessionDuration)
 
 	http.Redirect(w, r, config.Cfg.BaseURL+"/", http.StatusFound)
 }
