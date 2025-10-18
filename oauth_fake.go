@@ -2,12 +2,14 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
 	"edev/config"
+	"edev/db"
 	"edev/log"
 	"edev/session"
 	"edev/user"
@@ -100,13 +102,31 @@ func (FakeProvider) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sid := utils.NewOpaqueID()
+	u, err := db.Storage.GetUserOrCreateByOAuth(
+		"fakeoauth",
+		fmt.Sprintf("%v", raw["id"]),
+		fmt.Sprintf("%v", raw["email"]),
+		fmt.Sprintf("%v", raw["login"]),
+		fmt.Sprintf("%v", raw["avatar_url"]))
+	if err != nil {
+		http.Error(w, "get/create user failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	session.Put(sid, user.User{
-		ID:        1,                        // TODO: insert user if not exist in current provider
-		Username:  raw["username"].(string), // TODO: prevent collision
-		Email:     raw["email"].(string),
-		Enabled:   true,
-		AvatarURL: raw["avatar_url"].(string),
+		ID:        u.ID,
+		Username:  fmt.Sprintf("%v", raw["login"]),
+		Email:     fmt.Sprintf("%v", raw["email"]),
+		Enabled:   u.Enabled,
+		AvatarURL: fmt.Sprintf("%v", raw["avatar_url"]),
 	})
 	session.SetCookie(w, sid, config.Cfg.SessionDuration)
+
+	if u.Email == "" || !u.Enabled {
+		// Redirect to /me to prompt user to set email and update profile
+		http.Redirect(w, r, config.Cfg.BaseURL+"/me", http.StatusFound)
+		return
+	}
+
 	http.Redirect(w, r, config.Cfg.BaseURL+"/", http.StatusFound)
 }

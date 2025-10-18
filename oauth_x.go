@@ -9,8 +9,10 @@ import (
 	"time"
 
 	"edev/config"
+	"edev/db"
 	"edev/log"
 	"edev/session"
+	"edev/user"
 	"edev/utils"
 
 	"golang.org/x/oauth2"
@@ -121,13 +123,23 @@ func (p XProvider) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			http.Error(w, "read body failed", http.StatusBadGateway)
+			return
+		}
+
+		log.Printf("X verify_credentials response: %s", string(body))
+
 		var xuLegacy struct {
 			ID              string `json:"id_str"`
 			ScreenName      string `json:"screen_name"`
 			Name            string `json:"name"`
 			ProfileImageURL string `json:"profile_image_url_https"`
 		}
-		if err := json.NewDecoder(resp.Body).Decode(&xuLegacy); err != nil {
+
+		err = json.Unmarshal(body, &xuLegacy)
+		if err != nil {
 			http.Error(w, "decode user failed", http.StatusBadGateway)
 			return
 		}
@@ -164,6 +176,14 @@ func (p XProvider) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		http.Error(w, "read body failed", http.StatusBadGateway)
+		return
+	}
+
+	log.Printf("X verify_credentials response: %s", string(body))
+
 	var xu struct {
 		Data struct {
 			ID              string `json:"id"`
@@ -172,7 +192,9 @@ func (p XProvider) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 			ProfileImageURL string `json:"profile_image_url"`
 		} `json:"data"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&xu); err != nil {
+
+	err = json.Unmarshal(body, &xu)
+	if err != nil {
 		http.Error(w, "decode user failed", http.StatusBadGateway)
 		return
 	}
@@ -186,16 +208,28 @@ func (p XProvider) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 		xu.Data.ID, xu.Data.Username, xu.Data.Name, xu.Data.ProfileImageURL)
 
 	sid := utils.NewOpaqueID()
-	/*
-		// TODO: find user in X provider and if not found create it
-			session.Put(sid, user.User{
-				ID:        xu.Data.ID,
-				Login:     xu.Data.Username,
-				Name:      xu.Data.Name,
-				AvatarURL: xu.Data.ProfileImageURL,
-			})
-	*/
+
+	u, err := db.Storage.GetUserOrCreateByOAuth(
+		"github",
+		fmt.Sprintf("%v", xu.Data.ID),
+		"", // X API does not provide email :(
+		xu.Data.Username,
+		xu.Data.ProfileImageURL)
+	if err != nil {
+		http.Error(w, "get/create user failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	session.Put(sid, user.User{
+		ID:        u.ID,
+		Username:  xu.Data.Username,
+		Email:     u.Email,
+		Enabled:   false,
+		AvatarURL: xu.Data.ProfileImageURL,
+	})
+
 	session.SetCookie(w, sid, config.Cfg.SessionDuration)
 
-	http.Redirect(w, r, config.Cfg.BaseURL+"/", http.StatusFound)
+	// Redirect to /me to prompt user to set email and update profile
+	http.Redirect(w, r, config.Cfg.BaseURL+"/me", http.StatusFound)
 }

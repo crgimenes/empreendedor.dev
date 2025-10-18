@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="pt-BR" data-bs-theme="dark">
+<head>
+    {{template "head" .}}
+</head>
+
+<body>
+
+    <!-- form to enable user to change or complete his profile except the e-mail -->
+    <form method="POST" action="/me" enctype="multipart/form-data">
+        <h1>Meu Perfil</h1>
+        <button type="submit" class="btn btn-primary">Salvar</button>
+    </form>
+
+    <footer>
+        {{template "footer" .}}
+    </footer>
+    {{template "scripts" .}}
+</body>
+
+</html>

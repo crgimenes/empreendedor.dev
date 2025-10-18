@@ -9,8 +9,10 @@ import (
 	"time"
 
 	"edev/config"
+	"edev/db"
 	"edev/log"
 	"edev/session"
+	"edev/user"
 	"edev/utils"
 
 	"golang.org/x/oauth2"
@@ -28,7 +30,7 @@ func (GitHubProvider) config() *oauth2.Config {
 		ClientID:     config.Cfg.GitHubClientID,
 		ClientSecret: config.Cfg.GitHubClientSecret,
 		RedirectURL:  config.Cfg.BaseURL + "/github/oauth/callback",
-		Scopes:       []string{"read:user"},
+		Scopes:       []string{"read:user", "user:email"},
 		Endpoint: oauth2.Endpoint{
 			AuthURL:  "https://github.com/login/oauth/authorize",
 			TokenURL: "https://github.com/login/oauth/access_token",
@@ -103,13 +105,21 @@ func (p GitHubProvider) CallbackHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		http.Error(w, "read github user failed: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	log.Printf("github user response: %s", string(body))
+
 	var gu struct {
 		ID        int64  `json:"id"`
 		Login     string `json:"login"`
 		Name      string `json:"name"`
 		AvatarURL string `json:"avatar_url"`
+		Email     string `json:"email"`
 	}
-	err = json.NewDecoder(resp.Body).Decode(&gu)
+	err = json.Unmarshal(body, &gu)
 	if err != nil {
 		http.Error(w, "decode user failed", http.StatusBadGateway)
 		return
@@ -125,16 +135,31 @@ func (p GitHubProvider) CallbackHandler(w http.ResponseWriter, r *http.Request) 
 
 	sid := utils.NewOpaqueID()
 
-	/*
-		// TODO: find user im github oauth provider, then create user if not exist or return existing user
-		session.Put(sid, user.User{
-			ID:        fmt.Sprintf("%d", gu.ID),
-			Login:     gu.Login,
-			Name:      gu.Name,
-			AvatarURL: gu.AvatarURL,
-		})
-	*/
+	u, err := db.Storage.GetUserOrCreateByOAuth(
+		"github",
+		fmt.Sprintf("%d", gu.ID),
+		gu.Email,
+		gu.Login,
+		gu.AvatarURL)
+	if err != nil {
+		http.Error(w, "get/create user failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	session.Put(sid, user.User{
+		ID:        u.ID,
+		Username:  gu.Login,
+		Email:     gu.Email,
+		Enabled:   true,
+		AvatarURL: gu.AvatarURL,
+	})
 	session.SetCookie(w, sid, config.Cfg.SessionDuration)
+
+	if gu.Email == "" {
+		// Redirect to /me to prompt user to set email and update profile
+		http.Redirect(w, r, config.Cfg.BaseURL+"/me", http.StatusFound)
+		return
+	}
 
 	http.Redirect(w, r, config.Cfg.BaseURL+"/", http.StatusFound)
 }
