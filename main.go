@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -75,6 +76,10 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 			u, authed = got, true
 		}
 	}
+
+	// Check for message in query parameter
+	message := r.URL.Query().Get("message")
+
 	data := struct {
 		Authed  bool
 		User    user.User
@@ -82,9 +87,10 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 		Message string
 		Config  config.Config
 	}{
-		Authed: authed,
-		User:   u,
-		Config: *config.Cfg,
+		Authed:  authed,
+		User:    u,
+		Message: message,
+		Config:  *config.Cfg,
 	}
 
 	err := templates.ExecuteTemplate(w, "index.go.tmpl", data)
@@ -433,10 +439,10 @@ func handlerLoginMagic(w http.ResponseWriter, r *http.Request) {
 	ret, err := mail.Send(mail.EmailRequest{
 		From:    "noreply@" + strings.TrimPrefix(config.Cfg.BaseURL, "https://"),
 		To:      []string{email},
-		Subject: "Your magic login link",
-		Text: "Click the link to log in: " +
+		Subject: "Seu link de acesso magico",
+		Text: "Clique no link para fazer login: " +
 			link +
-			"\nThis link will expire in 15 minutes.\n--\nEdev",
+			"\nEste link expira em 15 minutos.\n--\nEdev",
 	})
 	if err != nil {
 		log.Printf("error sending magic link email: %v", err)
@@ -445,9 +451,9 @@ func handlerLoginMagic(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("sent magic link email to %s, id=%s", email, ret)
 
-	// always respond with 200 OK
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(`{"status":"ok"}`))
+	// Return redirect URL
+	redirectURL := config.Cfg.BaseURL + "/?message=" + url.QueryEscape("Link de acesso enviado! Verifique seu email.")
+	http.Redirect(w, r, redirectURL, http.StatusFound)
 
 }
 

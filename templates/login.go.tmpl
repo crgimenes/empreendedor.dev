@@ -90,13 +90,11 @@
                 });
                 
                 if (response.ok) {
-                    container.innerHTML = `
-                        <div class="alert alert-success alert-dismissible fade show mt-3" role="alert">
-                            Link enviado! Verifique seu email.
-                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                        </div>
-                    `;
-                    document.getElementById('email').value = '';
+                    const data = await response.json();
+                    if (data.redirect) {
+                        // Redirect to home with message
+                        window.location.href = data.redirect;
+                    }
                 } else {
                     container.innerHTML = `
                         <div class="alert alert-danger alert-dismissible fade show mt-3" role="alert">
