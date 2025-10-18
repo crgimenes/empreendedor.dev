@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"edev/utils"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"runtime"
@@ -1855,5 +1856,791 @@ func TestOAuthRepeatedLoginMergesProfileData(t *testing.T) {
 	// Step 5: Verify username didn't change
 	if user2.Username != username1 {
 		t.Fatalf("expected username to remain %q, got %q", username1, user2.Username)
+	}
+}
+
+// TestEnableUserByEmailValidation tests enabling user after email validation.
+func TestEnableUserByEmailValidationSuccess(t *testing.T) {
+	t.Parallel()
+	s := initTestDB(t)
+	defer s.Close()
+
+	// Step 1: Create user via magic link with email
+	email := "validate@example.com"
+	u, err := s.GetUserOrCreateByEmail(email)
+	if err != nil {
+		t.Fatalf("GetUserOrCreateByEmail failed: %v", err)
+	}
+
+	if u.Enabled {
+		t.Fatalf("user should not be enabled without username")
+	}
+
+	// Step 2: Update profile to add username
+	u, err = s.UpdateUserProfile(u.ID, "validuser", "https://example.com/avatar.jpg")
+	if err != nil {
+		t.Fatalf("UpdateUserProfile failed: %v", err)
+	}
+
+	// Step 3: Verify user is now enabled
+	if !u.Enabled {
+		t.Fatalf("user should be enabled after profile update")
+	}
+
+	// Step 4: Verify EnableUserByEmailValidation works
+	u, err = s.EnableUserByEmailValidation(u.ID)
+	if err != nil {
+		t.Fatalf("EnableUserByEmailValidation failed: %v", err)
+	}
+
+	if !u.Enabled {
+		t.Fatalf("user should be enabled")
+	}
+}
+
+// TestEnableUserByEmailValidationNoEmail tests error when user has no email.
+func TestEnableUserByEmailValidationNoEmail(t *testing.T) {
+	t.Parallel()
+	s := initTestDB(t)
+	defer s.Close()
+
+	// Try to enable user with no email (invalid state)
+	_, err := s.EnableUserByEmailValidation(9999)
+	if err == nil {
+		t.Fatalf("EnableUserByEmailValidation should fail for non-existent user")
+	}
+}
+
+// TestEnableUserByEmailValidationNoUsername tests error when user has no username.
+func TestEnableUserByEmailValidationNoUsername(t *testing.T) {
+	t.Parallel()
+	s := initTestDB(t)
+	defer s.Close()
+
+	// Step 1: Create user via magic link (no username)
+	u, err := s.GetUserOrCreateByEmail("nousername@example.com")
+	if err != nil {
+		t.Fatalf("GetUserOrCreateByEmail failed: %v", err)
+	}
+
+	// Step 2: Try to enable user without username
+	_, err = s.EnableUserByEmailValidation(u.ID)
+	if err == nil {
+		t.Fatalf("EnableUserByEmailValidation should fail when username is empty")
+	}
+
+	if !strings.Contains(err.Error(), "username") {
+		t.Fatalf("expected error about username, got: %v", err)
+	}
+}
+
+// TestGetUserOrCreateByOAuthNewUser tests creating a new OAuth user.
+func TestGetUserOrCreateByOAuthNewUser(t *testing.T) {
+	t.Parallel()
+	s := initTestDB(t)
+	defer s.Close()
+
+	u, err := s.GetUserOrCreateByOAuth("github", "gh-new-123", "newuser@example.com", "newusername", "https://example.com/avatar.jpg")
+	if err != nil {
+		t.Fatalf("GetUserOrCreateByOAuth failed: %v", err)
+	}
+
+	if u.ID == 0 {
+		t.Fatalf("user should have been created with non-zero ID")
+	}
+
+	if u.Email != "newuser@example.com" {
+		t.Fatalf("expected email 'newuser@example.com', got %q", u.Email)
+	}
+
+	if u.Username != "newusername" {
+		t.Fatalf("expected username 'newusername', got %q", u.Username)
+	}
+
+	if u.AvatarURL != "https://example.com/avatar.jpg" {
+		t.Fatalf("expected avatar, got %q", u.AvatarURL)
+	}
+
+	if !u.Enabled {
+		t.Fatalf("user should be enabled (has email and username)")
+	}
+}
+
+// TestGetUserOrCreateByOAuthExistingIdentity tests returning existing OAuth identity.
+func TestGetUserOrCreateByOAuthExistingIdentity(t *testing.T) {
+	t.Parallel()
+	s := initTestDB(t)
+	defer s.Close()
+
+	// Step 1: Create user
+	u1, err := s.GetUserOrCreateByOAuth("github", "gh-existing-123", "existing@example.com", "existinguser", "https://example.com/avatar1.jpg")
+	if err != nil {
+		t.Fatalf("first GetUserOrCreateByOAuth failed: %v", err)
+	}
+
+	// Step 2: Call again with same provider/ID
+	u2, err := s.GetUserOrCreateByOAuth("github", "gh-existing-123", "different@example.com", "differentuser", "https://example.com/avatar2.jpg")
+	if err != nil {
+		t.Fatalf("second GetUserOrCreateByOAuth failed: %v", err)
+	}
+
+	// Step 3: Verify same user returned (ID unchanged)
+	if u2.ID != u1.ID {
+		t.Fatalf("expected same user ID, got u1.ID=%d, u2.ID=%d", u1.ID, u2.ID)
+	}
+
+	// Step 4: Verify profile wasn't overwritten
+	if u2.Email != "existing@example.com" {
+		t.Fatalf("expected email to remain 'existing@example.com', got %q", u2.Email)
+	}
+}
+
+// TestGetUserOrCreateByOAuthMultipleProvidersViaEmail tests linking multiple providers to same user via email.
+func TestGetUserOrCreateByOAuthMultipleProvidersViaEmail(t *testing.T) {
+	t.Parallel()
+	s := initTestDB(t)
+	defer s.Close()
+
+	// Step 1: Create user via GitHub
+	email := "multiauth@example.com"
+	u1, err := s.GetUserOrCreateByOAuth("github", "gh-123", email, "ghuser", "https://github.com/avatar.jpg")
+	if err != nil {
+		t.Fatalf("GitHub GetUserOrCreateByOAuth failed: %v", err)
+	}
+
+	// Step 2: Create via X (Twitter) with same email
+	u2, err := s.GetUserOrCreateByOAuth("twitter", "tw-456", email, "twitteruser", "https://twitter.com/avatar.jpg")
+	if err != nil {
+		t.Fatalf("Twitter GetUserOrCreateByOAuth failed: %v", err)
+	}
+
+	// Step 3: Verify same user
+	if u2.ID != u1.ID {
+		t.Fatalf("expected same user, got u1.ID=%d, u2.ID=%d", u1.ID, u2.ID)
+	}
+
+	// Step 4: Verify both identities are linked
+	var ghCount, twCount int
+	_ = s.QueryRow(`SELECT COUNT(*) FROM identities WHERE user_id = ? AND provider = ?`, u1.ID, "github").Scan(&ghCount)
+	_ = s.QueryRow(`SELECT COUNT(*) FROM identities WHERE user_id = ? AND provider = ?`, u1.ID, "twitter").Scan(&twCount)
+
+	if ghCount != 1 || twCount != 1 {
+		t.Fatalf("expected both providers linked, got github=%d, twitter=%d", ghCount, twCount)
+	}
+}
+
+// TestGetUserOrCreateByOAuthWithoutEmail tests creating user without email.
+func TestGetUserOrCreateByOAuthWithoutEmail(t *testing.T) {
+	t.Parallel()
+	s := initTestDB(t)
+	defer s.Close()
+
+	u, err := s.GetUserOrCreateByOAuth("github", "gh-no-email", "", "noemailu", "https://example.com/avatar.jpg")
+	if err != nil {
+		t.Fatalf("GetUserOrCreateByOAuth without email failed: %v", err)
+	}
+
+	if u.Email != "" {
+		t.Fatalf("expected empty email, got %q", u.Email)
+	}
+
+	if u.Enabled {
+		t.Fatalf("user without email should not be enabled (requires both email and username)")
+	}
+}
+
+// TestGetUserOrCreateByOAuthWithoutUsername tests creating user without username.
+func TestGetUserOrCreateByOAuthWithoutUsername(t *testing.T) {
+	t.Parallel()
+	s := initTestDB(t)
+	defer s.Close()
+
+	u, err := s.GetUserOrCreateByOAuth("github", "gh-no-username", "nousername@example.com", "", "https://example.com/avatar.jpg")
+	if err != nil {
+		t.Fatalf("GetUserOrCreateByOAuth without username failed: %v", err)
+	}
+
+	if u.Username != "" {
+		t.Fatalf("expected empty username, got %q", u.Username)
+	}
+
+	if u.Enabled {
+		t.Fatalf("user without username should not be enabled")
+	}
+}
+
+// TestGetUserOrCreateByOAuthUsernameConflictOnNewUser tests that new user gets unique username when conflict exists.
+func TestGetUserOrCreateByOAuthUsernameConflictOnNewUser(t *testing.T) {
+	t.Parallel()
+	s := initTestDB(t)
+	defer s.Close()
+
+	// Step 1: Create first user with username "alice"
+	_, err := s.GetUserOrCreateByOAuth("github", "gh-alice1", "alice1@example.com", "alice", "")
+	if err != nil {
+		t.Fatalf("first user creation failed: %v", err)
+	}
+
+	// Step 2: Create second user trying to use same username "alice"
+	u2, err := s.GetUserOrCreateByOAuth("github", "gh-alice2", "alice2@example.com", "alice", "")
+	if err != nil {
+		t.Fatalf("second user creation failed: %v", err)
+	}
+
+	// Step 3: Verify second user got unique username
+	if u2.Username == "alice" {
+		t.Fatalf("expected unique username, got 'alice'")
+	}
+
+	if u2.Username != "alice1" {
+		t.Fatalf("expected 'alice1', got %q", u2.Username)
+	}
+}
+
+// TestUpdateUserProfileSuccess tests successful profile update.
+func TestUpdateUserProfileSuccess(t *testing.T) {
+	t.Parallel()
+	s := initTestDB(t)
+	defer s.Close()
+
+	// Create user first
+	u, err := s.GetUserOrCreateByEmail("profiletest@example.com")
+	if err != nil {
+		t.Fatalf("GetUserOrCreateByEmail failed: %v", err)
+	}
+
+	// Update profile
+	updated, err := s.UpdateUserProfile(u.ID, "profileuser", "https://example.com/profile.jpg")
+	if err != nil {
+		t.Fatalf("UpdateUserProfile failed: %v", err)
+	}
+
+	if updated.Username != "profileuser" {
+		t.Fatalf("expected username 'profileuser', got %q", updated.Username)
+	}
+
+	if updated.AvatarURL != "https://example.com/profile.jpg" {
+		t.Fatalf("expected avatar URL, got %q", updated.AvatarURL)
+	}
+
+	if !updated.Enabled {
+		t.Fatalf("user should be enabled after profile update")
+	}
+}
+
+// TestUpdateUserProfileEmptyUsername tests error on empty username.
+func TestUpdateUserProfileEmptyUsername(t *testing.T) {
+	t.Parallel()
+	s := initTestDB(t)
+	defer s.Close()
+
+	u, _ := s.GetUserOrCreateByEmail("empty@example.com")
+
+	_, err := s.UpdateUserProfile(u.ID, "   ", "")
+	if err == nil {
+		t.Fatalf("UpdateUserProfile should fail with empty username")
+	}
+
+	if !strings.Contains(err.Error(), "username is required") {
+		t.Fatalf("expected 'username is required' error, got %v", err)
+	}
+}
+
+// TestUpdateUserProfileZeroUserID tests error with zero user ID.
+func TestUpdateUserProfileZeroUserID(t *testing.T) {
+	t.Parallel()
+	s := initTestDB(t)
+	defer s.Close()
+
+	_, err := s.UpdateUserProfile(0, "testuser", "")
+	if err == nil {
+		t.Fatalf("UpdateUserProfile should fail with zero user ID")
+	}
+
+	if !strings.Contains(err.Error(), "user_id is required") {
+		t.Fatalf("expected 'user_id is required' error, got %v", err)
+	}
+}
+
+// TestMergeOAuthProfileDataNoChanges tests merge when no changes are needed.
+func TestMergeOAuthProfileDataNoChanges(t *testing.T) {
+	t.Parallel()
+	s := initTestDB(t)
+	defer s.Close()
+
+	// Create user with username and avatar already
+	u, _ := s.GetUserOrCreateByOAuth("github", "gh-123", "merge@example.com", "mergeuser", "https://example.com/avatar.jpg")
+
+	// Try to merge with new data (should not change)
+	merged, err := s.MergeOAuthProfileData(u.ID, "differentuser", "https://example.com/different.jpg")
+	if err != nil {
+		t.Fatalf("MergeOAuthProfileData failed: %v", err)
+	}
+
+	if merged.Username != "mergeuser" {
+		t.Fatalf("expected username to remain 'mergeuser', got %q", merged.Username)
+	}
+
+	if merged.AvatarURL != "https://example.com/avatar.jpg" {
+		t.Fatalf("expected avatar to remain unchanged, got %q", merged.AvatarURL)
+	}
+}
+
+// TestMergeOAuthProfileDataZeroUserID tests error with zero user ID.
+func TestMergeOAuthProfileDataZeroUserID(t *testing.T) {
+	t.Parallel()
+	s := initTestDB(t)
+	defer s.Close()
+
+	_, err := s.MergeOAuthProfileData(0, "user", "https://example.com/avatar.jpg")
+	if err == nil {
+		t.Fatalf("MergeOAuthProfileData should fail with zero user ID")
+	}
+
+	if !strings.Contains(err.Error(), "user_id is required") {
+		t.Fatalf("expected 'user_id is required' error, got %v", err)
+	}
+}
+
+// TestStoreMagicLinkTokenValidation tests token storage with validation.
+func TestStoreMagicLinkTokenValidation(t *testing.T) {
+	t.Parallel()
+	s := initTestDB(t)
+	defer s.Close()
+
+	token := "valid-token-123"
+	email := "tokentest@example.com"
+	expiresAt := time.Now().UTC().Add(1 * time.Hour)
+
+	err := s.StoreMagicLinkToken(token, email, expiresAt)
+	if err != nil {
+		t.Fatalf("StoreMagicLinkToken failed: %v", err)
+	}
+
+	// Verify token was stored
+	var storedEmail string
+	_ = s.QueryRow(`SELECT email FROM magic_token WHERE token = ?`, token).Scan(&storedEmail)
+
+	if storedEmail != email {
+		t.Fatalf("expected email %q, got %q", email, storedEmail)
+	}
+}
+
+// TestConsumeMagicLinkTokenExpired tests consuming an expired token.
+func TestConsumeMagicLinkTokenExpired(t *testing.T) {
+	t.Parallel()
+	s := initTestDB(t)
+	defer s.Close()
+
+	token := "expired-token"
+	email := "expired@example.com"
+	expiresAt := time.Now().UTC().Add(-1 * time.Hour) // Already expired
+
+	_ = s.StoreMagicLinkToken(token, email, expiresAt)
+
+	// Try to consume expired token
+	retrievedEmail, err := s.ConsumeMagicLinkToken(token)
+	if err != nil {
+		t.Fatalf("ConsumeMagicLinkToken failed: %v", err)
+	}
+
+	if retrievedEmail != "" {
+		t.Fatalf("expected empty email for expired token, got %q", retrievedEmail)
+	}
+}
+
+// TestGetUserByIDNotFound tests error when user doesn't exist.
+func TestGetUserByIDNotFound(t *testing.T) {
+	t.Parallel()
+	s := initTestDB(t)
+	defer s.Close()
+
+	_, err := s.GetUserByID(99999)
+	if err == nil {
+		t.Fatalf("GetUserByID should fail for non-existent user")
+	}
+
+	if !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("expected sql.ErrNoRows, got %v", err)
+	}
+}
+
+// TestGetUserOrCreateByEmailCaseSensitivity tests case-insensitive email handling.
+func TestGetUserOrCreateByEmailCaseSensitivity(t *testing.T) {
+	t.Parallel()
+	s := initTestDB(t)
+	defer s.Close()
+
+	// Create user with lowercase email
+	u1, err := s.GetUserOrCreateByEmail("Test@Example.Com")
+	if err != nil {
+		t.Fatalf("first GetUserOrCreateByEmail failed: %v", err)
+	}
+
+	// Get same user with different case
+	u2, err := s.GetUserOrCreateByEmail("test@example.com")
+	if err != nil {
+		t.Fatalf("second GetUserOrCreateByEmail failed: %v", err)
+	}
+
+	// Should be same user
+	if u2.ID != u1.ID {
+		t.Fatalf("expected same user, got u1.ID=%d, u2.ID=%d", u1.ID, u2.ID)
+	}
+}
+
+// TestGetUserOrCreateByOAuthMultipleNewUsers tests creating multiple new OAuth users.
+func TestGetUserOrCreateByOAuthMultipleNewUsers(t *testing.T) {
+	t.Parallel()
+	s := initTestDB(t)
+	defer s.Close()
+
+	// Create multiple users via OAuth
+	u1, _ := s.GetUserOrCreateByOAuth("github", "gh-1", "user1@example.com", "user1", "")
+	u2, _ := s.GetUserOrCreateByOAuth("github", "gh-2", "user2@example.com", "user2", "")
+	u3, _ := s.GetUserOrCreateByOAuth("twitter", "tw-1", "user3@example.com", "user3", "")
+
+	if u1.ID == u2.ID || u2.ID == u3.ID || u1.ID == u3.ID {
+		t.Fatalf("all users should have different IDs")
+	}
+
+	if u1.Username != "user1" || u2.Username != "user2" || u3.Username != "user3" {
+		t.Fatalf("usernames don't match expected values")
+	}
+}
+
+// TestGenerateUniqueUsernameMultipleConflicts tests generating unique username with multiple conflicts.
+func TestGenerateUniqueUsernameMultipleConflicts(t *testing.T) {
+	t.Parallel()
+	s := initTestDB(t)
+	defer s.Close()
+
+	// Create users with numbered usernames
+	s.Exec(`INSERT INTO users(email, username) VALUES(?, ?)`, "u1@example.com", "alice")
+	s.Exec(`INSERT INTO users(email, username) VALUES(?, ?)`, "u2@example.com", "alice1")
+	s.Exec(`INSERT INTO users(email, username) VALUES(?, ?)`, "u3@example.com", "alice2")
+	s.Exec(`INSERT INTO users(email, username) VALUES(?, ?)`, "u4@example.com", "alice3")
+
+	// Generate unique username should give alice4
+	username, err := s.GenerateUniqueUsername("alice")
+	if err != nil {
+		t.Fatalf("GenerateUniqueUsername failed: %v", err)
+	}
+
+	if username != "alice4" {
+		t.Fatalf("expected 'alice4', got %q", username)
+	}
+}
+
+// TestCountUsersWithUsernamePrefixEdgeCases tests prefix counting with edge cases.
+func TestCountUsersWithUsernamePrefixEdgeCases(t *testing.T) {
+	t.Parallel()
+	s := initTestDB(t)
+	defer s.Close()
+
+	// No users created yet
+	count, _ := s.CountUsersWithUsernamePrefix("nonexistent")
+	if count != 0 {
+		t.Fatalf("expected 0 count, got %d", count)
+	}
+
+	// Create users and test case-insensitive matching
+	s.Exec(`INSERT INTO users(email, username) VALUES(?, ?)`, "u1@example.com", "Test")
+	s.Exec(`INSERT INTO users(email, username) VALUES(?, ?)`, "u2@example.com", "TEST1")
+	s.Exec(`INSERT INTO users(email, username) VALUES(?, ?)`, "u3@example.com", "test2")
+
+	// Count with lowercase should match all case variations
+	count, _ = s.CountUsersWithUsernamePrefix("test")
+	if count != 3 {
+		t.Fatalf("expected 3 (case-insensitive), got %d", count)
+	}
+
+	// Count with uppercase should also match
+	count, _ = s.CountUsersWithUsernamePrefix("TEST")
+	if count != 3 {
+		t.Fatalf("expected 3 (case-insensitive), got %d", count)
+	}
+}
+
+// TestStoreMagicLinkTokenDuplicateEmail tests storing multiple tokens for same email.
+func TestStoreMagicLinkTokenDuplicateEmail(t *testing.T) {
+	t.Parallel()
+	s := initTestDB(t)
+	defer s.Close()
+
+	email := "multi@example.com"
+	token1 := "token-1"
+	token2 := "token-2"
+
+	// Store first token
+	_ = s.StoreMagicLinkToken(token1, email, time.Now().UTC().Add(1*time.Hour))
+
+	// Store second token for same email
+	_ = s.StoreMagicLinkToken(token2, email, time.Now().UTC().Add(1*time.Hour))
+
+	// Both should exist
+	var count int
+	_ = s.QueryRow(`SELECT COUNT(*) FROM magic_token WHERE email = ?`, email).Scan(&count)
+
+	if count != 2 {
+		t.Fatalf("expected 2 tokens for same email, got %d", count)
+	}
+}
+
+// TestPurgeExpiredMagicLinkTokensMultipleExpired tests purging multiple expired tokens.
+func TestPurgeExpiredMagicLinkTokensMultipleExpired(t *testing.T) {
+	t.Parallel()
+	s := initTestDB(t)
+	defer s.Close()
+
+	// Create mix of expired and valid tokens
+	for i := 0; i < 5; i++ {
+		token := fmt.Sprintf("expired-%d", i)
+		_ = s.StoreMagicLinkToken(token, "expired@example.com", time.Now().UTC().Add(-1*time.Hour))
+	}
+
+	for i := 0; i < 3; i++ {
+		token := fmt.Sprintf("valid-%d", i)
+		_ = s.StoreMagicLinkToken(token, "valid@example.com", time.Now().UTC().Add(1*time.Hour))
+	}
+
+	// Verify initial state
+	var beforeCount int
+	_ = s.QueryRow(`SELECT COUNT(*) FROM magic_token`).Scan(&beforeCount)
+	if beforeCount != 8 {
+		t.Fatalf("expected 8 tokens before purge, got %d", beforeCount)
+	}
+
+	// Purge
+	_ = s.PurgeExpiredMagicLinkTokens()
+
+	// Verify only valid tokens remain
+	var afterCount int
+	_ = s.QueryRow(`SELECT COUNT(*) FROM magic_token`).Scan(&afterCount)
+	if afterCount != 3 {
+		t.Fatalf("expected 3 tokens after purge, got %d", afterCount)
+	}
+}
+
+// TestGetUserByOAuthProviderIDMultipleIdentities tests retrieving user with multiple provider identities.
+func TestGetUserByOAuthProviderIDMultipleIdentities(t *testing.T) {
+	t.Parallel()
+	s := initTestDB(t)
+	defer s.Close()
+
+	// Create user with multiple OAuth providers
+	u, _ := s.GetUserOrCreateByOAuth("github", "gh-123", "multi@example.com", "multiuser", "")
+	_, _ = s.GetUserOrCreateByOAuth("twitter", "tw-456", "multi@example.com", "", "")
+
+	// Find user by GitHub identity
+	userID, _ := s.GetUserByOAuthProviderID("github", "gh-123")
+	if userID != u.ID {
+		t.Fatalf("expected user ID %d, got %d", u.ID, userID)
+	}
+
+	// Find user by Twitter identity
+	userID, _ = s.GetUserByOAuthProviderID("twitter", "tw-456")
+	if userID != u.ID {
+		t.Fatalf("expected user ID %d, got %d", u.ID, userID)
+	}
+}
+
+// TestUpdateUserProfileAvatarOnly tests updating only avatar URL.
+func TestUpdateUserProfileAvatarOnly(t *testing.T) {
+	t.Parallel()
+	s := initTestDB(t)
+	defer s.Close()
+
+	u, _ := s.GetUserOrCreateByEmail("avatar@example.com")
+
+	// Update profile with avatar
+	updated, err := s.UpdateUserProfile(u.ID, "avataruser", "https://example.com/avatar.jpg")
+	if err != nil {
+		t.Fatalf("UpdateUserProfile failed: %v", err)
+	}
+
+	// Verify avatar is set
+	if updated.AvatarURL != "https://example.com/avatar.jpg" {
+		t.Fatalf("expected avatar URL, got %q", updated.AvatarURL)
+	}
+}
+
+// TestConsumeMagicLinkTokenTwice tests consuming same token twice.
+func TestConsumeMagicLinkTokenTwice(t *testing.T) {
+	t.Parallel()
+	s := initTestDB(t)
+	defer s.Close()
+
+	token := "twice-token"
+	email := "twice@example.com"
+
+	_ = s.StoreMagicLinkToken(token, email, time.Now().UTC().Add(1*time.Hour))
+
+	// First consume
+	email1, _ := s.ConsumeMagicLinkToken(token)
+	if email1 != email {
+		t.Fatalf("first consume failed")
+	}
+
+	// Second consume should return empty
+	email2, _ := s.ConsumeMagicLinkToken(token)
+	if email2 != "" {
+		t.Fatalf("expected empty email on second consume, got %q", email2)
+	}
+}
+
+// TestMergeOAuthProfileDataUsernameConflict tests merge when username would conflict.
+func TestMergeOAuthProfileDataUsernameConflict(t *testing.T) {
+	t.Parallel()
+	s := initTestDB(t)
+	defer s.Close()
+
+	// Create first user
+	_, _ = s.GetUserOrCreateByOAuth("github", "gh-1", "user1@example.com", "conflicted", "")
+
+	// Create second user without username
+	u2, _ := s.GetUserOrCreateByOAuth("twitter", "tw-1", "user2@example.com", "", "")
+
+	// Try to merge with conflicting username
+	merged, err := s.MergeOAuthProfileData(u2.ID, "conflicted", "https://example.com/avatar.jpg")
+	if err != nil {
+		t.Fatalf("MergeOAuthProfileData failed: %v", err)
+	}
+
+	// Should get unique username
+	if merged.Username == "conflicted" {
+		t.Fatalf("expected unique username, got 'conflicted'")
+	}
+
+	if merged.Username != "conflicted1" {
+		t.Fatalf("expected 'conflicted1', got %q", merged.Username)
+	}
+}
+
+// TestGetUserOrCreateByOAuthAllEmpty tests creating OAuth user with no data.
+func TestGetUserOrCreateByOAuthAllEmpty(t *testing.T) {
+	t.Parallel()
+	s := initTestDB(t)
+	defer s.Close()
+
+	u, err := s.GetUserOrCreateByOAuth("github", "gh-empty", "", "", "")
+	if err != nil {
+		t.Fatalf("GetUserOrCreateByOAuth with empty data failed: %v", err)
+	}
+
+	if u.Email != "" || u.Username != "" || u.AvatarURL != "" {
+		t.Fatalf("expected all fields empty")
+	}
+
+	if u.Enabled {
+		t.Fatalf("user with no email/username should not be enabled")
+	}
+}
+
+// TestMagicLinkTokenRoundTripWithLeadingTrailingSpaces tests email canonicalization.
+func TestMagicLinkTokenRoundTripWithLeadingTrailingSpaces(t *testing.T) {
+	t.Parallel()
+	s := initTestDB(t)
+	defer s.Close()
+
+	// Store token with space-padded email (should be canonicalized)
+	email := "  spaces@example.com  "
+	token := "spaces-token"
+
+	err := s.StoreMagicLinkToken(token, email, time.Now().UTC().Add(1*time.Hour))
+	if err != nil {
+		t.Fatalf("StoreMagicLinkToken failed: %v", err)
+	}
+
+	// Consume should work
+	retrieved, _ := s.ConsumeMagicLinkToken(token)
+	if retrieved == "" {
+		t.Fatalf("expected to consume token")
+	}
+}
+
+// TestGetUserOrCreateByEmailInvalidEmail tests handling of invalid emails.
+func TestGetUserOrCreateByEmailInvalidEmail(t *testing.T) {
+	t.Parallel()
+	s := initTestDB(t)
+	defer s.Close()
+
+	// Try to create user with invalid email
+	_, err := s.GetUserOrCreateByEmail("not-an-email")
+	if err == nil {
+		t.Fatalf("GetUserOrCreateByEmail should fail with invalid email")
+	}
+}
+
+// TestUpdateUserProfileNoUserFound tests updating non-existent user.
+func TestUpdateUserProfileNoUserFound(t *testing.T) {
+	t.Parallel()
+	s := initTestDB(t)
+	defer s.Close()
+
+	// Try to update non-existent user
+	_, err := s.UpdateUserProfile(99999, "testuser", "")
+	if err == nil {
+		t.Fatalf("UpdateUserProfile should fail for non-existent user")
+	}
+}
+
+// TestEnableUserByEmailValidationZeroUserID tests error with zero user ID.
+func TestEnableUserByEmailValidationZeroUserID(t *testing.T) {
+	t.Parallel()
+	s := initTestDB(t)
+	defer s.Close()
+
+	_, err := s.EnableUserByEmailValidation(0)
+	if err == nil {
+		t.Fatalf("EnableUserByEmailValidation should fail with zero user ID")
+	}
+
+	if !strings.Contains(err.Error(), "user_id is required") {
+		t.Fatalf("expected 'user_id is required' error, got %v", err)
+	}
+}
+
+// TestGenerateUniqueUsernameEmpty tests generating unique username from empty base.
+func TestGenerateUniqueUsernameEmpty(t *testing.T) {
+	t.Parallel()
+	s := initTestDB(t)
+	defer s.Close()
+
+	username, err := s.GenerateUniqueUsername("")
+	if err != nil {
+		t.Fatalf("GenerateUniqueUsername with empty base failed: %v", err)
+	}
+
+	if username != "" {
+		t.Fatalf("expected empty string for empty base, got %q", username)
+	}
+}
+
+// TestMergeOAuthProfileDataNonExistentUser tests merge with non-existent user.
+func TestMergeOAuthProfileDataNonExistentUser(t *testing.T) {
+	t.Parallel()
+	s := initTestDB(t)
+	defer s.Close()
+
+	_, err := s.MergeOAuthProfileData(99999, "user", "https://example.com/avatar.jpg")
+	if err == nil {
+		t.Fatalf("MergeOAuthProfileData should fail for non-existent user")
+	}
+}
+
+// TestGetUserByOAuthProviderIDNotFound tests retrieving non-existent provider ID.
+func TestGetUserByOAuthProviderIDNotFound(t *testing.T) {
+	t.Parallel()
+	s := initTestDB(t)
+	defer s.Close()
+
+	userID, err := s.GetUserByOAuthProviderID("github", "gh-nonexistent")
+	if err != nil {
+		t.Fatalf("GetUserByOAuthProviderID should not error for missing ID: %v", err)
+	}
+
+	if userID != 0 {
+		t.Fatalf("expected userID 0 for non-existent provider, got %d", userID)
 	}
 }
