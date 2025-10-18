@@ -281,6 +281,14 @@ func (s *SQLite) QueryRow(query string, args ...any) *Row {
 	return newRow(s.ro.QueryRowContext(ctx, query, args...), cancel)
 }
 
+func (s *SQLite) QueryRowRW(query string, args ...any) *Row {
+	if s == nil || s.rw == nil {
+		return errorRow(errors.New("db not initialized"))
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), defaultReadOpTimeout)
+	return newRow(s.rw.QueryRowContext(ctx, query, args...), cancel)
+}
+
 // QueryRW allows SELECT using the RW pool (rarely needed).
 func (s *SQLite) QueryRW(query string, args ...any) (*sql.Rows, error) {
 	if s == nil || s.rw == nil {
@@ -322,7 +330,6 @@ func (s *SQLite) GetUserByOAuthProviderID(provider string, providerID string) (i
         JOIN identities i ON u.id = i.user_id
         WHERE i.provider = ?    -- 1
         AND i.provider_uid = ?  -- 2
-        AND u.enabled = 1
         LIMIT 1;`
 
 	row := s.QueryRow(
@@ -346,9 +353,9 @@ func (s *SQLite) StoreMagicLinkToken(
 	email string,
 	expiresAt time.Time) error {
 	const sqlStatement = `INSERT INTO magic_token (
-            email,
-            token,
-            expires_at,
+            email,         -- 1
+            token,         -- 2
+            expires_at,  -- 3
             action
         VALUES (
             ?,        -- 1
@@ -367,11 +374,11 @@ func (s *SQLite) StoreMagicLinkToken(
 
 func (s *SQLite) ConsumeMagicLinkToken(token string) (string, error) {
 	const sqlSelect = `SELECT
-			email
-		FROM magic_token
-		WHERE token = ?          -- 1
-		AND expires_at > CURRENT_TIMESTAMP
-		LIMIT 1;`
+            email
+        FROM magic_token
+        WHERE token = ?          -- 1
+        AND expires_at > CURRENT_TIMESTAMP
+        LIMIT 1;`
 
 	var email string
 	err := s.QueryRow(
@@ -386,7 +393,7 @@ func (s *SQLite) ConsumeMagicLinkToken(token string) (string, error) {
 	}
 
 	const sqlDelete = `DELETE FROM magic_token
-		WHERE token = ?;` // 1
+        WHERE token = ?;` // 1
 
 	err = s.Exec(
 		sqlDelete,
@@ -401,21 +408,21 @@ func (s *SQLite) ConsumeMagicLinkToken(token string) (string, error) {
 
 func (s *SQLite) PurgeExpiredMagicLinkTokens() error {
 	const sqlStatement = `DELETE FROM magic_token
-		WHERE expires_at <= CURRENT_TIMESTAMP;`
+        WHERE expires_at <= CURRENT_TIMESTAMP;`
 
 	return s.Exec(sqlStatement)
 }
 
 func (s *SQLite) GetUserOrCreateByEmail(email string) (*user.User, error) {
 	const sqlSelect = `SELECT
-			id,
-			username,
-			email,
-			avatar_url,
-			enabled
-		FROM users
-		WHERE email = ?  -- 1
-		LIMIT 1;`
+            id,            -- 1
+            username,    -- 2
+            email,        -- 3
+            avatar_url,    -- 4
+            enabled        -- 5
+        FROM users
+        WHERE email = ?  -- 1
+        LIMIT 1;`
 
 	var u user.User
 
@@ -428,11 +435,11 @@ func (s *SQLite) GetUserOrCreateByEmail(email string) (*user.User, error) {
 		sqlSelect,
 		email, // 1
 	).Scan(
-		&u.ID,
-		&u.Username,
-		&u.Email,
-		&u.AvatarURL,
-		&u.Enabled,
+		&u.ID,        // 1
+		&u.Username,  // 2
+		&u.Email,     // 3
+		&u.AvatarURL, // 4
+		&u.Enabled,   // 5
 	)
 	if err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
@@ -445,29 +452,133 @@ func (s *SQLite) GetUserOrCreateByEmail(email string) (*user.User, error) {
 	}
 
 	const sqlInsert = `INSERT INTO users (
-			email,
-			enabled,
-			created_at,
-			updated_at
-		) VALUES (
-			?,                 -- 1
-			1,                 -- if created via magic link, enable by default
-			CURRENT_TIMESTAMP, -- created_at
-			CURRENT_TIMESTAMP  -- updated_at
-		)
-		RETURNING id;`
+            email,             -- 1
+            username,          -- 2
+            created_at,
+            updated_at
+        ) VALUES (
+            ?,                 -- 1
+            ?,                 -- 2
+            CURRENT_TIMESTAMP, -- created_at
+            CURRENT_TIMESTAMP  -- updated_at
+        )
+        RETURNING id;`
 
-	err = s.QueryRow(
+	err = s.QueryRowRW(
 		sqlInsert,
 		email, // 1
+		email, // 2 // TODO: generate better username
 	).Scan(&u.ID)
 	if err != nil {
 		return nil, err
 	}
 
-	u.AvatarURL = ""
-	u.Enabled = true
 	u.Email = email
+
+	return &u, nil
+}
+
+func (s *SQLite) GetUserByID(userID int64) (*user.User, error) {
+	const sqlSelect = `SELECT
+            id,          -- 1
+            username,    -- 2
+            email,       -- 3
+            avatar_url,  -- 4
+            enabled      -- 5
+        FROM users
+        WHERE id = ?  -- 1
+        LIMIT 1;`
+
+	var u user.User
+
+	err := s.QueryRow(
+		sqlSelect,
+		userID, // 1
+	).Scan(
+		&u.ID,        // 1
+		&u.Username,  // 2
+		&u.Email,     // 3
+		&u.AvatarURL, // 4
+		&u.Enabled,   // 5
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &u, nil
+}
+
+func (s *SQLite) GetUserOrCreateByOAuth(
+	provider string,
+	providerID string,
+	email string,
+	username string,
+	avatarURL string) (*user.User, error) {
+
+	userID, err := s.GetUserByOAuthProviderID(provider, providerID)
+	if err != nil {
+		return nil, err
+	}
+	if userID != 0 {
+		return s.GetUserByID(userID)
+	}
+
+	u := user.User{
+		Username:  username,
+		Email:     email,
+		AvatarURL: avatarURL,
+		Enabled:   false,
+	}
+
+	const sqlInsert = `INSERT INTO users (
+            email,             -- 1
+            username,          -- 2
+            avatar_url,        -- 3
+            created_at,
+            updated_at
+        ) VALUES (
+            ?,                 -- 1
+            ?,                 -- 2
+            ?,                 -- 3
+            CURRENT_TIMESTAMP, -- created_at
+            CURRENT_TIMESTAMP  -- updated_at
+        )
+        RETURNING id;`
+
+	err = s.QueryRowRW(
+		sqlInsert,
+		email,     // 1
+		username,  // 2
+		avatarURL, // 3
+	).Scan(&u.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	//-----------------------------------------
+	const sqlInsertIdentity = `INSERT INTO identities (
+            user_id,          -- 1
+            provider,         -- 2
+            provider_uid,     -- 3
+            created_at,
+            updated_at
+        ) VALUES (
+            ?,                 -- 1
+            ?,                 -- 2
+            ?,                 -- 3
+            CURRENT_TIMESTAMP, -- created_at
+            CURRENT_TIMESTAMP  -- updated_at
+        );`
+
+	err = s.Exec(
+		sqlInsertIdentity,
+		u.ID,       // 1
+		provider,   // 2
+		providerID, // 3
+	)
+	if err != nil {
+		return nil, err
+	}
 
 	return &u, nil
 }

@@ -7,8 +7,8 @@
 
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY,
-    username TEXT NOT NULL UNIQUE,
-    email TEXT NOT NULL UNIQUE,
+    username TEXT,
+    email TEXT,
     enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0,1)),
     avatar_url TEXT,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
