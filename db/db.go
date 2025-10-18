@@ -534,22 +534,28 @@ func (s *SQLite) GetUserOrCreateByOAuth(
             email,             -- 1
             username,          -- 2
             avatar_url,        -- 3
+			enabled,           -- 4
             created_at,
             updated_at
         ) VALUES (
             ?,                 -- 1
             ?,                 -- 2
             ?,                 -- 3
+			?,                 -- 4
             CURRENT_TIMESTAMP, -- created_at
             CURRENT_TIMESTAMP  -- updated_at
         )
         RETURNING id;`
+
+	// enabled is true if email is verified (for OAuth, we assume it is).
+	enabled := email != ""
 
 	err = s.QueryRowRW(
 		sqlInsert,
 		email,     // 1
 		username,  // 2
 		avatarURL, // 3
+		enabled,   // 4
 	).Scan(&u.ID)
 	if err != nil {
 		return nil, err
