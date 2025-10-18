@@ -355,9 +355,9 @@ func (s *SQLite) StoreMagicLinkToken(
 	const sqlStatement = `INSERT INTO magic_token (
             email,         -- 1
             token,         -- 2
-            expires_at,  -- 3
+            expires_at,    -- 3
             action
-        VALUES (
+        ) VALUES (
             ?,        -- 1
             ?,        -- 2
             ?,        -- 3
@@ -415,11 +415,11 @@ func (s *SQLite) PurgeExpiredMagicLinkTokens() error {
 
 func (s *SQLite) GetUserOrCreateByEmail(email string) (*user.User, error) {
 	const sqlSelect = `SELECT
-            id,            -- 1
+            id,          -- 1
             username,    -- 2
-            email,        -- 3
-            avatar_url,    -- 4
-            enabled        -- 5
+            email,       -- 3
+            avatar_url,  -- 4
+            enabled      -- 5
         FROM users
         WHERE email = ?  -- 1
         LIMIT 1;`
