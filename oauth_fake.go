@@ -12,7 +12,6 @@ import (
 	"edev/db"
 	"edev/log"
 	"edev/session"
-	"edev/user"
 	"edev/utils"
 )
 
@@ -101,7 +100,6 @@ func (FakeProvider) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sid := utils.NewOpaqueID()
 	u, err := db.Storage.GetUserOrCreateByOAuth(
 		"fakeoauth",
 		fmt.Sprintf("%v", raw["id"]),
@@ -113,17 +111,15 @@ func (FakeProvider) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session.Put(sid, user.User{
-		ID:        u.ID,
-		Username:  fmt.Sprintf("%v", raw["login"]),
-		Email:     fmt.Sprintf("%v", raw["email"]),
-		Enabled:   u.Enabled,
-		AvatarURL: fmt.Sprintf("%v", raw["avatar_url"]),
-	})
+	sid := utils.NewOpaqueID()
+	session.Put(sid, *u)
 	session.SetCookie(w, sid, config.Cfg.SessionDuration)
 
-	if u.Email == "" || !u.Enabled {
-		// Redirect to /me to prompt user to set email and update profile
+	log.Printf("user %s logged in via fake OAuth", u.Email)
+
+	// If user doesn't have username, redirect to /me to complete profile
+	if u.Username == "" {
+		log.Printf("user %s has no username, redirecting to /me", u.Email)
 		http.Redirect(w, r, config.Cfg.BaseURL+"/me", http.StatusFound)
 		return
 	}

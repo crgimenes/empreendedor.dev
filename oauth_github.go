@@ -12,7 +12,6 @@ import (
 	"edev/db"
 	"edev/log"
 	"edev/session"
-	"edev/user"
 	"edev/utils"
 
 	"golang.org/x/oauth2"
@@ -133,8 +132,6 @@ func (p GitHubProvider) CallbackHandler(w http.ResponseWriter, r *http.Request) 
 	log.Printf("logged in user: ID=%d, Login=%s, Name=%s, AvatarURL=%s",
 		gu.ID, gu.Login, gu.Name, gu.AvatarURL)
 
-	sid := utils.NewOpaqueID()
-
 	u, err := db.Storage.GetUserOrCreateByOAuth(
 		"github",
 		fmt.Sprintf("%d", gu.ID),
@@ -146,17 +143,15 @@ func (p GitHubProvider) CallbackHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	session.Put(sid, user.User{
-		ID:        u.ID,
-		Username:  gu.Login,
-		Email:     gu.Email,
-		Enabled:   true,
-		AvatarURL: gu.AvatarURL,
-	})
+	sid := utils.NewOpaqueID()
+	session.Put(sid, *u)
 	session.SetCookie(w, sid, config.Cfg.SessionDuration)
 
-	if gu.Email == "" {
-		// Redirect to /me to prompt user to set email and update profile
+	log.Printf("user %s logged in via GitHub", u.Email)
+
+	// If user doesn't have username, redirect to /me to complete profile
+	if u.Username == "" {
+		log.Printf("user %s has no username, redirecting to /me", u.Email)
 		http.Redirect(w, r, config.Cfg.BaseURL+"/me", http.StatusFound)
 		return
 	}

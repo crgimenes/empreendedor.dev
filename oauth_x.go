@@ -12,7 +12,6 @@ import (
 	"edev/db"
 	"edev/log"
 	"edev/session"
-	"edev/user"
 	"edev/utils"
 
 	"golang.org/x/oauth2"
@@ -207,12 +206,10 @@ func (p XProvider) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 	log.Printf("logged in X user: ID=%s, Username=%s, Name=%s, AvatarURL=%s",
 		xu.Data.ID, xu.Data.Username, xu.Data.Name, xu.Data.ProfileImageURL)
 
-	sid := utils.NewOpaqueID()
-
 	u, err := db.Storage.GetUserOrCreateByOAuth(
-		"github",
+		"x",
 		fmt.Sprintf("%v", xu.Data.ID),
-		"", // X API does not provide email :(
+		"", // X API does not provide email
 		xu.Data.Username,
 		xu.Data.ProfileImageURL)
 	if err != nil {
@@ -220,16 +217,18 @@ func (p XProvider) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session.Put(sid, user.User{
-		ID:        u.ID,
-		Username:  xu.Data.Username,
-		Email:     u.Email,
-		Enabled:   false,
-		AvatarURL: xu.Data.ProfileImageURL,
-	})
-
+	sid := utils.NewOpaqueID()
+	session.Put(sid, *u)
 	session.SetCookie(w, sid, config.Cfg.SessionDuration)
 
-	// Redirect to /me to prompt user to set email and update profile
-	http.Redirect(w, r, config.Cfg.BaseURL+"/me", http.StatusFound)
+	log.Printf("user %s logged in via X", u.Email)
+
+	// If user doesn't have email, redirect to /me to complete profile
+	if u.Email == "" {
+		log.Printf("user %s has no email, redirecting to /me", u.Username)
+		http.Redirect(w, r, config.Cfg.BaseURL+"/me", http.StatusFound)
+		return
+	}
+
+	http.Redirect(w, r, config.Cfg.BaseURL+"/", http.StatusFound)
 }
