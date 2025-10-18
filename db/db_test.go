@@ -1510,3 +1510,350 @@ func TestEnableUserByEmailValidation(t *testing.T) {
 		t.Fatalf("user should be enabled after profile update")
 	}
 }
+
+// TestOAuthEmailConflictResolution tests that OAuth respects existing users registered via magic link.
+func TestOAuthEmailConflictResolution(t *testing.T) {
+	t.Parallel()
+	s := initTestDB(t)
+	defer s.Close()
+
+	// Step 1: User signs up via magic link
+	email := "shared@example.com"
+	magicLinkUser, err := s.GetUserOrCreateByEmail(email)
+	if err != nil {
+		t.Fatalf("GetUserOrCreateByEmail failed: %v", err)
+	}
+	if magicLinkUser.ID == 0 {
+		t.Fatalf("GetUserOrCreateByEmail returned user with ID 0")
+	}
+
+	// Step 2: User tries to login via OAuth with same email but different username
+	oauthUsername := "oauth_user"
+	oauthUser, err := s.GetUserOrCreateByOAuth("github", "gh-12345", email, oauthUsername, "")
+	if err != nil {
+		t.Fatalf("GetUserOrCreateByOAuth failed: %v", err)
+	}
+
+	// Step 3: Verify same user (same ID)
+	if oauthUser.ID != magicLinkUser.ID {
+		t.Fatalf("Expected same user ID, got magic_link=%d, oauth=%d", magicLinkUser.ID, oauthUser.ID)
+	}
+
+	// Step 4: Verify GitHub identity was added to existing user
+	var identityCount int
+	const countSQL = `SELECT COUNT(*) FROM identities WHERE user_id = ? AND provider = ? AND provider_uid = ?`
+	if err := s.QueryRow(countSQL, magicLinkUser.ID, "github", "gh-12345").Scan(&identityCount); err != nil {
+		t.Fatalf("count identities: %v", err)
+	}
+	if identityCount != 1 {
+		t.Fatalf("expected 1 identity, got %d", identityCount)
+	}
+
+	// Step 5: Verify username was updated (if magic link user had no username)
+	if magicLinkUser.Username == "" {
+		updated, err := s.GetUserByID(magicLinkUser.ID)
+		if err != nil {
+			t.Fatalf("GetUserByID failed: %v", err)
+		}
+		if updated.Username != oauthUsername {
+			t.Fatalf("expected username %q, got %q", oauthUsername, updated.Username)
+		}
+	}
+}
+
+// TestOAuthUsernameConflictGeneration tests that OAuth generates unique usernames when conflict exists.
+func TestOAuthUsernameConflictGeneration(t *testing.T) {
+	t.Parallel()
+	s := initTestDB(t)
+	defer s.Close()
+
+	// Step 1: Create first user with username "cesar"
+	email1 := "cesar@example.com"
+	_, err := s.GetUserOrCreateByOAuth("github", "gh-cesar1", email1, "cesar", "")
+	if err != nil {
+		t.Fatalf("first user creation failed: %v", err)
+	}
+
+	// Step 2: Try to create another user with same username but different email/provider
+	email2 := "newuser@example.com"
+	user2, err := s.GetUserOrCreateByOAuth("github", "gh-cesar2", email2, "cesar", "")
+	if err != nil {
+		t.Fatalf("second user creation failed: %v", err)
+	}
+
+	// Step 3: Verify second user got a numbered username
+	if user2.Username == "cesar" {
+		t.Fatalf("expected username to be modified for conflict, got 'cesar'")
+	}
+
+	// Step 4: Verify both users exist and have different usernames
+	var user1ID int64
+	const checkSQL = `SELECT id FROM users WHERE LOWER(email) = LOWER(?)`
+	if err := s.QueryRow(checkSQL, email1).Scan(&user1ID); err != nil {
+		t.Fatalf("query user1: %v", err)
+	}
+
+	user1, err := s.GetUserByID(user1ID)
+	if err != nil {
+		t.Fatalf("GetUserByID failed: %v", err)
+	}
+
+	if user1.Username == user2.Username {
+		t.Fatalf("expected different usernames, both got %q", user1.Username)
+	}
+}
+
+// TestCountUsersWithUsernamePrefix tests the prefix counting function.
+func TestCountUsersWithUsernamePrefix(t *testing.T) {
+	t.Parallel()
+	s := initTestDB(t)
+	defer s.Close()
+
+	// Create some users with matching prefixes
+	s.Exec(`INSERT INTO users(email, username) VALUES(?, ?)`, "user1@example.com", "cesar")
+	s.Exec(`INSERT INTO users(email, username) VALUES(?, ?)`, "user2@example.com", "cesar1")
+	s.Exec(`INSERT INTO users(email, username) VALUES(?, ?)`, "user3@example.com", "cesar2")
+	s.Exec(`INSERT INTO users(email, username) VALUES(?, ?)`, "user4@example.com", "other")
+
+	// Count users with "cesar" prefix
+	count, err := s.CountUsersWithUsernamePrefix("cesar")
+	if err != nil {
+		t.Fatalf("CountUsersWithUsernamePrefix failed: %v", err)
+	}
+
+	if count != 3 {
+		t.Fatalf("expected 3 users with 'cesar' prefix, got %d", count)
+	}
+
+	// Count users with "other" prefix
+	count, err = s.CountUsersWithUsernamePrefix("other")
+	if err != nil {
+		t.Fatalf("CountUsersWithUsernamePrefix failed: %v", err)
+	}
+
+	if count != 1 {
+		t.Fatalf("expected 1 user with 'other' prefix, got %d", count)
+	}
+}
+
+// TestGenerateUniqueUsername tests unique username generation.
+func TestGenerateUniqueUsername(t *testing.T) {
+	t.Parallel()
+	s := initTestDB(t)
+	defer s.Close()
+
+	// Test 1: Generate username when no conflict
+	username, err := s.GenerateUniqueUsername("newname")
+	if err != nil {
+		t.Fatalf("GenerateUniqueUsername failed: %v", err)
+	}
+	if username != "newname" {
+		t.Fatalf("expected 'newname', got %q", username)
+	}
+
+	// Test 2: Create a user with this username
+	s.Exec(`INSERT INTO users(email, username) VALUES(?, ?)`, "user@example.com", "newname")
+
+	// Test 3: Generate username again (should return numbered version)
+	username, err = s.GenerateUniqueUsername("newname")
+	if err != nil {
+		t.Fatalf("GenerateUniqueUsername failed: %v", err)
+	}
+	if username == "newname" {
+		t.Fatalf("expected numbered version, got 'newname'")
+	}
+}
+
+// TestMergeOAuthProfileData tests that OAuth data (avatar, username) is merged into existing users.
+func TestMergeOAuthProfileData(t *testing.T) {
+	t.Parallel()
+	s := initTestDB(t)
+	defer s.Close()
+
+	// Step 1: Create user via magic link (no username, no avatar)
+	magicUser, err := s.GetUserOrCreateByEmail("magicuser@example.com")
+	if err != nil {
+		t.Fatalf("GetUserOrCreateByEmail failed: %v", err)
+	}
+	if magicUser.Username != "" || magicUser.AvatarURL != "" {
+		t.Fatalf("expected empty username and avatar, got username=%q, avatar=%q", magicUser.Username, magicUser.AvatarURL)
+	}
+
+	// Step 2: Merge OAuth profile data into existing user
+	oauthUsername := "oauth_username"
+	oauthAvatar := "https://example.com/avatar.jpg"
+
+	updated, err := s.MergeOAuthProfileData(magicUser.ID, oauthUsername, oauthAvatar)
+	if err != nil {
+		t.Fatalf("MergeOAuthProfileData failed: %v", err)
+	}
+
+	// Step 3: Verify both username and avatar were updated
+	if updated.Username != oauthUsername {
+		t.Fatalf("expected username %q, got %q", oauthUsername, updated.Username)
+	}
+	if updated.AvatarURL != oauthAvatar {
+		t.Fatalf("expected avatar %q, got %q", oauthAvatar, updated.AvatarURL)
+	}
+
+	// Step 4: Verify user is now enabled (both username and email present)
+	if !updated.Enabled {
+		t.Fatalf("expected user to be enabled after merge, got enabled=%v", updated.Enabled)
+	}
+}
+
+// TestMergeOAuthProfileDataPreservesExisting tests that existing profile data is not overwritten.
+func TestMergeOAuthProfileDataPreservesExisting(t *testing.T) {
+	t.Parallel()
+	s := initTestDB(t)
+	defer s.Close()
+
+	// Step 1: Create user via OAuth with username and avatar
+	oauthUser, err := s.GetUserOrCreateByOAuth("github", "gh-123", "oauthuser@example.com", "existing_username", "https://example.com/existing.jpg")
+	if err != nil {
+		t.Fatalf("GetUserOrCreateByOAuth failed: %v", err)
+	}
+
+	// Step 2: Try to merge new OAuth data (should NOT overwrite existing fields)
+	newUsername := "new_username"
+	newAvatar := "https://example.com/new.jpg"
+
+	merged, err := s.MergeOAuthProfileData(oauthUser.ID, newUsername, newAvatar)
+	if err != nil {
+		t.Fatalf("MergeOAuthProfileData failed: %v", err)
+	}
+
+	// Step 3: Verify existing data was preserved
+	if merged.Username != "existing_username" {
+		t.Fatalf("expected username to be preserved as 'existing_username', got %q", merged.Username)
+	}
+	if merged.AvatarURL != "https://example.com/existing.jpg" {
+		t.Fatalf("expected avatar to be preserved, got %q", merged.AvatarURL)
+	}
+}
+
+// TestMergeOAuthProfileDataPartialUpdate tests partial updates (only avatar or only username).
+func TestMergeOAuthProfileDataPartialUpdate(t *testing.T) {
+	t.Parallel()
+	s := initTestDB(t)
+	defer s.Close()
+
+	// Step 1: Create user via magic link (no username, no avatar)
+	magicUser, err := s.GetUserOrCreateByEmail("partialuser@example.com")
+	if err != nil {
+		t.Fatalf("GetUserOrCreateByEmail failed: %v", err)
+	}
+
+	// Step 2: Update only username (avatar is empty)
+	merged, err := s.MergeOAuthProfileData(magicUser.ID, "partial_username", "")
+	if err != nil {
+		t.Fatalf("MergeOAuthProfileData with empty avatar failed: %v", err)
+	}
+
+	if merged.Username != "partial_username" {
+		t.Fatalf("expected username to be updated, got %q", merged.Username)
+	}
+	if merged.AvatarURL != "" {
+		t.Fatalf("expected avatar to remain empty, got %q", merged.AvatarURL)
+	}
+
+	// Step 3: Update only avatar (username is now set, so won't be updated)
+	merged, err = s.MergeOAuthProfileData(magicUser.ID, "another_username", "https://example.com/avatar.jpg")
+	if err != nil {
+		t.Fatalf("MergeOAuthProfileData with avatar failed: %v", err)
+	}
+
+	if merged.Username != "partial_username" {
+		t.Fatalf("expected username to remain 'partial_username', got %q", merged.Username)
+	}
+	if merged.AvatarURL != "https://example.com/avatar.jpg" {
+		t.Fatalf("expected avatar to be updated, got %q", merged.AvatarURL)
+	}
+}
+
+// TestOAuthAvatarUpdateOnExistingUser tests the complete flow: magic link signup then OAuth with avatar.
+func TestOAuthAvatarUpdateOnExistingUser(t *testing.T) {
+	t.Parallel()
+	s := initTestDB(t)
+	defer s.Close()
+
+	// Step 1: User signs up via magic link
+	email := "shared@example.com"
+	magicLinkUser, err := s.GetUserOrCreateByEmail(email)
+	if err != nil {
+		t.Fatalf("GetUserOrCreateByEmail failed: %v", err)
+	}
+
+	// Step 2: Same user logs in via GitHub OAuth with avatar and username
+	githubUsername := "github_user"
+	githubAvatar := "https://github.com/github_user.jpg"
+
+	oauthUser, err := s.GetUserOrCreateByOAuth("github", "gh-github_user", email, githubUsername, githubAvatar)
+	if err != nil {
+		t.Fatalf("GetUserOrCreateByOAuth failed: %v", err)
+	}
+
+	// Step 3: Verify same user (same ID)
+	if oauthUser.ID != magicLinkUser.ID {
+		t.Fatalf("expected same user, got magic_link_id=%d, oauth_id=%d", magicLinkUser.ID, oauthUser.ID)
+	}
+
+	// Step 4: Verify avatar and username were populated from OAuth
+	if oauthUser.Username != githubUsername {
+		t.Fatalf("expected username %q, got %q", githubUsername, oauthUser.Username)
+	}
+	if oauthUser.AvatarURL != githubAvatar {
+		t.Fatalf("expected avatar %q, got %q", githubAvatar, oauthUser.AvatarURL)
+	}
+
+	// Step 5: Verify user is now enabled
+	if !oauthUser.Enabled {
+		t.Fatalf("expected user to be enabled, got enabled=%v", oauthUser.Enabled)
+	}
+}
+
+// TestOAuthRepeatedLoginMergesProfileData tests that subsequent OAuth logins merge updated profile data.
+func TestOAuthRepeatedLoginMergesProfileData(t *testing.T) {
+	t.Parallel()
+	s := initTestDB(t)
+	defer s.Close()
+
+	// Step 1: User logs in via GitHub (first time, no avatar returned)
+	email := "repeated@example.com"
+	username1 := "github_user"
+	avatarURL1 := "" // First login, no avatar
+
+	user1, err := s.GetUserOrCreateByOAuth("github", "gh-repeated-123", email, username1, avatarURL1)
+	if err != nil {
+		t.Fatalf("first GetUserOrCreateByOAuth failed: %v", err)
+	}
+
+	if user1.Username != username1 {
+		t.Fatalf("expected username %q, got %q", username1, user1.Username)
+	}
+	if user1.AvatarURL != "" {
+		t.Fatalf("expected empty avatar after first login, got %q", user1.AvatarURL)
+	}
+
+	// Step 2: Same user logs in via GitHub again (this time avatar is available)
+	avatarURL2 := "https://github.com/github_user.jpg"
+	user2, err := s.GetUserOrCreateByOAuth("github", "gh-repeated-123", email, username1, avatarURL2)
+	if err != nil {
+		t.Fatalf("second GetUserOrCreateByOAuth failed: %v", err)
+	}
+
+	// Step 3: Verify same user ID
+	if user2.ID != user1.ID {
+		t.Fatalf("expected same user ID, got user1.ID=%d, user2.ID=%d", user1.ID, user2.ID)
+	}
+
+	// Step 4: Verify avatar was updated from the second login
+	if user2.AvatarURL != avatarURL2 {
+		t.Fatalf("expected avatar %q after second login, got %q", avatarURL2, user2.AvatarURL)
+	}
+
+	// Step 5: Verify username didn't change
+	if user2.Username != username1 {
+		t.Fatalf("expected username to remain %q, got %q", username1, user2.Username)
+	}
+}

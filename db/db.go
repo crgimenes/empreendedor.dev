@@ -349,6 +349,57 @@ func (s *SQLite) GetUserByOAuthProviderID(provider string, providerID string) (i
 	return userID, nil
 }
 
+// CountUsersWithUsernamePrefix counts how many users have a username starting with the given prefix (case-insensitive).
+// Used for generating unique usernames when conflicts occur.
+func (s *SQLite) CountUsersWithUsernamePrefix(prefix string) (int, error) {
+	const sqlStatement = `SELECT COUNT(*) FROM users WHERE LOWER(username) LIKE LOWER(?) || '%'`
+
+	var count int
+	err := s.QueryRow(sqlStatement, prefix).Scan(&count)
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+// GenerateUniqueUsername generates a unique username by appending a number if the base username is taken.
+// If baseUsername is available, returns it unchanged.
+// Otherwise, appends 1, 2, 3, etc. until a unique username is found.
+func (s *SQLite) GenerateUniqueUsername(baseUsername string) (string, error) {
+	const sqlCheck = `SELECT COUNT(*) FROM users WHERE LOWER(username) = LOWER(?)`
+
+	// Check if base username is available
+	var count int
+	err := s.QueryRow(sqlCheck, baseUsername).Scan(&count)
+	if err != nil {
+		return "", err
+	}
+
+	if count == 0 {
+		return baseUsername, nil // Base username is available
+	}
+
+	// Base username is taken, find how many variants exist with this prefix
+	existingCount, err := s.CountUsersWithUsernamePrefix(baseUsername)
+	if err != nil {
+		return "", err
+	}
+
+	// Try appending numbers until we find an available username
+	for i := 1; i <= existingCount+10; i++ {
+		candidate := baseUsername + fmt.Sprintf("%d", i)
+		err := s.QueryRow(sqlCheck, candidate).Scan(&count)
+		if err != nil {
+			return "", err
+		}
+		if count == 0 {
+			return candidate, nil
+		}
+	}
+
+	return "", fmt.Errorf("could not generate unique username for %s", baseUsername)
+}
+
 func (s *SQLite) StoreMagicLinkToken(
 	token string,
 	email string,
@@ -520,6 +571,98 @@ func (s *SQLite) GetUserByID(userID int64) (*user.User, error) {
 	return &u, nil
 }
 
+// MergeOAuthProfileData merges OAuth provider data into existing user,
+// updating only blank fields.
+// It updates username (with conflict resolution) if user.Username is
+// empty and oauthUsername is provided.
+// It updates avatar_url if user.AvatarURL is empty and oauthAvatarURL is provided.
+// Returns updated user with enabled=true if both username and email
+// are now present, or error.
+func (s *SQLite) MergeOAuthProfileData(
+	userID int64,
+	oauthUsername string,
+	oauthAvatarURL string) (*user.User, error) {
+
+	if userID == 0 {
+		return nil, errors.New("user_id is required")
+	}
+
+	// Get current user
+	currentUser, err := s.GetUserByID(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	if currentUser.Email == "" {
+		return nil, errors.New("user has no email; cannot update")
+	}
+
+	// Determine which fields need updating
+	newUsername := currentUser.Username
+	newAvatarURL := currentUser.AvatarURL
+
+	// Update username only if current is empty and OAuth provides one
+	if oauthUsername != "" && currentUser.Username == "" {
+		uniqueUsername, err := s.GenerateUniqueUsername(oauthUsername)
+		if err != nil {
+			return nil, err
+		}
+		newUsername = uniqueUsername
+	}
+
+	// Update avatar_url only if current is empty and OAuth provides one
+	if oauthAvatarURL != "" && currentUser.AvatarURL == "" {
+		newAvatarURL = oauthAvatarURL
+	}
+
+	// If nothing changed, return current user as-is
+	if newUsername == currentUser.Username && newAvatarURL == currentUser.AvatarURL {
+		return currentUser, nil
+	}
+
+	// Determine if user should be enabled (both username and email must be present)
+	shouldBeEnabled := newUsername != "" && currentUser.Email != ""
+
+	// Update user with new values
+	const sqlUpdate = `UPDATE users
+		SET
+			username = ?,    -- 1
+			avatar_url = ?,  -- 2
+			enabled = ?      -- 3
+		WHERE id = ?         -- 4
+		RETURNING
+			id,
+			COALESCE(username, ''),
+			email,
+			COALESCE(avatar_url, ''),
+			enabled;`
+
+	var u user.User
+	enabled := 0
+	if shouldBeEnabled {
+		enabled = 1
+	}
+
+	err = s.QueryRowRW(
+		sqlUpdate,
+		newUsername,  // 1
+		newAvatarURL, // 2
+		enabled,      // 3
+		userID,       // 4
+	).Scan(
+		&u.ID,
+		&u.Username,
+		&u.Email,
+		&u.AvatarURL,
+		&u.Enabled,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &u, nil
+}
+
 // UpdateUserProfile updates username, avatar_url and enables user if email is
 // already validated (email must be non-empty). Validates that username and
 // email are not duplicated (case-insensitive). Returns the updated user or
@@ -655,16 +798,75 @@ func (s *SQLite) GetUserOrCreateByOAuth(
 	username string,
 	avatarURL string) (*user.User, error) {
 
+	// First, check if we have an existing OAuth identity for this provider/providerID
 	userID, err := s.GetUserByOAuthProviderID(provider, providerID)
 	if err != nil {
 		return nil, err
 	}
 	if userID != 0 {
-		return s.GetUserByID(userID)
+		// User already has this OAuth identity
+		// Still merge profile data in case OAuth provider now provides data it didn't before
+		existingUser, err := s.MergeOAuthProfileData(userID, username, avatarURL)
+		if err != nil {
+			return nil, err
+		}
+		return existingUser, nil
+	}
+
+	// Check if a user with this email already exists (from magic link or another OAuth provider)
+	if email != "" {
+		emailUser, err := s.GetUserOrCreateByEmail(email)
+		if err != nil {
+			return nil, err
+		}
+		if emailUser != nil && emailUser.ID != 0 {
+			// Email already exists, link this OAuth identity to the existing user
+			const sqlInsertIdentity = `INSERT INTO identities (
+                user_id,          -- 1
+                provider,         -- 2
+                provider_uid,     -- 3
+                created_at,
+                updated_at
+            ) VALUES (
+                ?,                 -- 1
+                ?,                 -- 2
+                ?,                 -- 3
+                CURRENT_TIMESTAMP, -- created_at
+                CURRENT_TIMESTAMP  -- updated_at
+            );`
+
+			err = s.Exec(
+				sqlInsertIdentity,
+				emailUser.ID, // 1
+				provider,     // 2
+				providerID,   // 3
+			)
+			if err != nil {
+				return nil, err
+			}
+
+			// Update missing fields from OAuth data if they are empty in database
+			emailUser, err = s.MergeOAuthProfileData(emailUser.ID, username, avatarURL)
+			if err != nil {
+				return nil, err
+			}
+
+			return emailUser, nil
+		}
+	}
+
+	// No existing email or OAuth identity, create new user with conflict resolution for username
+	actualUsername := username
+	if username != "" {
+		var err error
+		actualUsername, err = s.GenerateUniqueUsername(username)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	u := user.User{
-		Username:  username,
+		Username:  actualUsername,
 		Email:     email,
 		AvatarURL: avatarURL,
 		Enabled:   false,
@@ -689,19 +891,19 @@ func (s *SQLite) GetUserOrCreateByOAuth(
             id,
             COALESCE(username, ''),
             email,
-            COALESCE(avatar_url, ''),
+			COALESCE(avatar_url, ''),
             enabled;`
 
 	// enabled is true only if BOTH username AND email are present
 	// (we assume email is validated by OAuth provider if present)
-	enabled := email != "" && username != ""
+	enabled := email != "" && actualUsername != ""
 
 	err = s.QueryRowRW(
 		sqlInsert,
-		email,     // 1
-		username,  // 2
-		avatarURL, // 3
-		enabled,   // 4
+		email,          // 1
+		actualUsername, // 2
+		avatarURL,      // 3
+		enabled,        // 4
 	).Scan(
 		&u.ID,
 		&u.Username,
