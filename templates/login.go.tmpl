@@ -5,38 +5,117 @@
 </head>
 
 <body>
-    <p>Selecione abaixo como deseja entrar no sistema.</p>
-    {{if .Config.GithubOAuthEnabled}}
-        <a href="/login/github" rel="nofollow">Entrar com GitHub</a>
-        <br>
-    {{end}}
-    {{if .Config.XOAuthEnabled}}
-        <a href="/login/x" rel="nofollow">Entrar com X (Twitter)</a>
-        <br>
-    {{end}}
-    {{if .Config.FakeOAuthEnabled}}
-        <a href="/login/fake" rel="nofollow">Login Fake OAuth</a>
-        <br>
-    {{end}}
+    {{template "navbar" .}}
 
-    <form method="post" action="/login/magic_link">
-        <h2>Login por e-mail</h2>
-        <p>Envie-me um link de login</p>
-        <label for="email">e-mail:</label>
-        <input type="email" id="email" name="email" required>
-        <br>
-        <button type="submit">Entrar</button>
-    </form>
+    <main class="container py-5">
+        <div class="row justify-content-center">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-body">
+                        <h1 class="card-title text-center mb-4">Entrar</h1>
 
-    <a href="/login/create_new_account" rel="nofollow">Criar nova conta</a>
-    <br>
-    <a href="/" rel="nofollow">Voltar</a>
-    <br>
-    Ao prosseguir, você concorda com o uso de cookies de sessão.
+                        <!-- OAuth Providers -->
+                        <div class="mb-4">
+                            <h6 class="card-subtitle mb-3">Conectar com:</h6>
+                            {{if .Config.GithubOAuthEnabled}}
+                                <a href="/login/github" class="btn btn-light w-100 mb-2" rel="nofollow">
+                                    <i class="bi bi-github"></i> GitHub
+                                </a>
+                            {{end}}
+                            {{if .Config.XOAuthEnabled}}
+                                <a href="/login/x" class="btn btn-info w-100 mb-2" rel="nofollow">
+                                    <i class="bi bi-twitter-x"></i> X (Twitter)
+                                </a>
+                            {{end}}
+                            {{if .Config.FakeOAuthEnabled}}
+                                <a href="/login/fake" class="btn btn-secondary w-100 mb-2" rel="nofollow">
+                                    <i class="bi bi-person-fill"></i> Teste OAuth
+                                </a>
+                            {{end}}
+                        </div>
+
+                        <!-- Divider -->
+                        <div class="mb-4">
+                            <hr>
+                            <div class="text-center text-muted" style="margin: -30px 0 15px; background: var(--bs-body-bg);">
+                                <span style="padding: 0 10px;">ou</span>
+                            </div>
+                        </div>
+
+                        <!-- Magic Link Form -->
+                        <form method="post" action="/login/magic_link" id="magicLinkForm">
+                            <div class="mb-3">
+                                <label for="email" class="form-label">Email</label>
+                                <input type="email" class="form-control" id="email" name="email" 
+                                    placeholder="seu@email.com" required>
+                                <small class="form-text text-muted">
+                                    Enviaremos um link de login para seu email
+                                </small>
+                            </div>
+                            <button type="submit" class="btn btn-primary w-100">
+                                Enviar Link de Login
+                            </button>
+                        </form>
+
+                        <!-- Status Messages -->
+                        <div id="messageContainer"></div>
+                    </div>
+                </div>
+
+                <!-- Info -->
+                <p class="text-center text-muted mt-4 small">
+                    Ao prosseguir, voce concorda com o uso de cookies de sessao.<br>
+                    <a href="/" class="text-decoration-none">Voltar a home</a>
+                </p>
+            </div>
+        </div>
+    </main>
+
     <footer>
         {{template "footer" .}}
     </footer>
     {{template "scripts" .}}
+
+    <script>
+        document.getElementById('magicLinkForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const email = document.getElementById('email').value;
+            const container = document.getElementById('messageContainer');
+            
+            try {
+                const response = await fetch('/login/magic_link', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: 'email=' + encodeURIComponent(email)
+                });
+                
+                if (response.ok) {
+                    container.innerHTML = `
+                        <div class="alert alert-success alert-dismissible fade show mt-3" role="alert">
+                            Link enviado! Verifique seu email.
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        </div>
+                    `;
+                    document.getElementById('email').value = '';
+                } else {
+                    container.innerHTML = `
+                        <div class="alert alert-danger alert-dismissible fade show mt-3" role="alert">
+                            Erro ao enviar link. Tente novamente.
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        </div>
+                    `;
+                }
+            } catch (err) {
+                container.innerHTML = `
+                    <div class="alert alert-danger alert-dismissible fade show mt-3" role="alert">
+                        Erro na requisicao. Tente novamente.
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                `;
+            }
+        });
+    </script>
 </body>
 
 </html>
+

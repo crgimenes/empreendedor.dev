@@ -5,12 +5,88 @@
 </head>
 
 <body>
+    {{template "navbar" .}}
 
-    <!-- form to enable user to change or complete his profile except the e-mail -->
-    <form method="POST" action="/me" enctype="multipart/form-data">
-        <h1>Meu Perfil</h1>
-        <button type="submit" class="btn btn-primary">Salvar</button>
-    </form>
+    <main class="container py-5">
+        <div class="row justify-content-center">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-body">
+                        <h1 class="card-title mb-4">Meu Perfil</h1>
+
+                        {{if .Error}}
+                            <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                                {{.Error}}
+                                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                            </div>
+                        {{end}}
+
+                        {{if .Message}}
+                            <div class="alert alert-success alert-dismissible fade show" role="alert">
+                                {{.Message}}
+                                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                            </div>
+                        {{end}}
+
+                        <form method="POST" action="/me" class="needs-validation">
+                            <!-- Email (read-only) -->
+                            <div class="mb-3">
+                                <label for="email" class="form-label">Email</label>
+                                <input type="email" class="form-control" id="email" name="email" 
+                                    value="{{.User.Email}}" readonly>
+                                <small class="form-text text-muted">Email nao pode ser alterado</small>
+                            </div>
+
+                            <!-- Username -->
+                            <div class="mb-3">
+                                <label for="username" class="form-label">Nome de usuario</label>
+                                <input type="text" class="form-control" id="username" name="username" 
+                                    value="{{.User.Username}}" required
+                                    placeholder="Escolha um nome de usuario">
+                                <small class="form-text text-muted">
+                                    O nome de usuario deve ser unico e unico em todo o sistema
+                                </small>
+                            </div>
+
+                            <!-- Avatar URL -->
+                            <div class="mb-3">
+                                <label for="avatar_url" class="form-label">URL do Avatar</label>
+                                <input type="url" class="form-control" id="avatar_url" name="avatar_url" 
+                                    value="{{.User.AvatarURL}}"
+                                    placeholder="https://exemplo.com/avatar.jpg">
+                                {{if .User.AvatarURL}}
+                                    <img src="{{.User.AvatarURL}}" alt="Avatar do usuario" 
+                                        class="img-thumbnail mt-2" style="max-width: 100px;">
+                                {{end}}
+                            </div>
+
+                            <!-- Buttons -->
+                            <div class="d-grid gap-2">
+                                <button type="submit" class="btn btn-primary">Salvar Perfil</button>
+                                <a href="/" class="btn btn-secondary">Cancelar</a>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Account Info -->
+                <div class="card mt-4">
+                    <div class="card-body">
+                        <h6 class="card-title">Informacoes da Conta</h6>
+                        <p class="mb-1"><small><strong>ID:</strong> {{.User.ID}}</small></p>
+                        <p class="mb-1"><small><strong>Email:</strong> {{.User.Email}}</small></p>
+                        <p class="mb-1"><small><strong>Status:</strong> 
+                            {{if .User.Enabled}}
+                                <span class="badge bg-success">Ativa</span>
+                            {{else}}
+                                <span class="badge bg-warning">Incompleta</span>
+                            {{end}}
+                        </small></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
 
     <footer>
         {{template "footer" .}}
@@ -19,3 +95,4 @@
 </body>
 
 </html>
+
