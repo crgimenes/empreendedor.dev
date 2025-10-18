@@ -5,13 +5,11 @@
   </head>
 
   <body>
-      {{if .User.Login}}
+      {{if .User.Username}}
         <img src="{{.User.AvatarURL}}" alt="Avatar do usuário" />
         <h2>
-          Bem-vindo, {{if .User.Name}}
-                        {{.User.Name}}
-                    {{else}}
-                        {{.User.Login}}
+          Bem-vindo, {{if .User.Username}}
+                        {{.User.Username}}
                     {{end}}!
         </h2>
         <strong>ID:</strong> {{.User.ID}}
