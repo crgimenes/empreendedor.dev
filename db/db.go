@@ -625,17 +625,17 @@ func (s *SQLite) MergeOAuthProfileData(
 
 	// Update user with new values
 	const sqlUpdate = `UPDATE users
-		SET
-			username = ?,    -- 1
-			avatar_url = ?,  -- 2
-			enabled = ?      -- 3
-		WHERE id = ?         -- 4
-		RETURNING
-			id,
-			COALESCE(username, ''),
-			email,
-			COALESCE(avatar_url, ''),
-			enabled;`
+        SET
+            username = ?,    -- 1
+            avatar_url = ?,  -- 2
+            enabled = ?      -- 3
+        WHERE id = ?         -- 4
+        RETURNING
+            id,
+            COALESCE(username, ''),
+            email,
+            COALESCE(avatar_url, ''),
+            enabled;`
 
 	var u user.User
 	enabled := 0
@@ -695,9 +695,9 @@ func (s *SQLite) UpdateUserProfile(
 
 	// Check username uniqueness (case-insensitive)
 	const sqlCheckUsername = `SELECT COUNT(*) FROM users
-		WHERE LOWER(username) = LOWER(?)
-		AND id != ?
-		LIMIT 1;`
+        WHERE LOWER(username) = LOWER(?)
+        AND id != ?
+        LIMIT 1;`
 
 	var count int
 	err = s.QueryRow(sqlCheckUsername, username, userID).Scan(&count)
@@ -710,17 +710,17 @@ func (s *SQLite) UpdateUserProfile(
 
 	// Update user: set username, avatar_url, and enable
 	const sqlUpdate = `UPDATE users
-		SET
-			username = ?,    -- 1
-			avatar_url = ?,  -- 2
-			enabled = 1
-		WHERE id = ?         -- 3
-		RETURNING
-			id,
-			COALESCE(username, ''),
-			email,
-			COALESCE(avatar_url, ''),
-			enabled;`
+        SET
+            username = ?,    -- 1
+            avatar_url = ?,  -- 2
+            enabled = 1
+        WHERE id = ?         -- 3
+        RETURNING
+            id,
+            COALESCE(username, ''),
+            email,
+            COALESCE(avatar_url, ''),
+            enabled;`
 
 	var u user.User
 	err = s.QueryRowRW(
@@ -767,14 +767,14 @@ func (s *SQLite) EnableUserByEmailValidation(userID int64) (*user.User, error) {
 
 	// Enable user
 	const sqlEnable = `UPDATE users
-		SET enabled = 1
-		WHERE id = ?
-		RETURNING
-			id,
-			COALESCE(username, ''),
-			email,
-			COALESCE(avatar_url, ''),
-			enabled;`
+        SET enabled = 1
+        WHERE id = ?
+        RETURNING
+            id,
+            COALESCE(username, ''),
+            email,
+            COALESCE(avatar_url, ''),
+            enabled;`
 
 	var u user.User
 	err = s.QueryRowRW(sqlEnable, userID).Scan(
@@ -876,14 +876,14 @@ func (s *SQLite) GetUserOrCreateByOAuth(
             email,             -- 1
             username,          -- 2
             avatar_url,        -- 3
-			enabled,           -- 4
+            enabled,           -- 4
             created_at,
             updated_at
         ) VALUES (
             ?,                 -- 1
             ?,                 -- 2
             ?,                 -- 3
-			?,                 -- 4
+            ?,                 -- 4
             CURRENT_TIMESTAMP, -- created_at
             CURRENT_TIMESTAMP  -- updated_at
         )
@@ -891,7 +891,7 @@ func (s *SQLite) GetUserOrCreateByOAuth(
             id,
             COALESCE(username, ''),
             email,
-			COALESCE(avatar_url, ''),
+            COALESCE(avatar_url, ''),
             enabled;`
 
 	// enabled is true only if BOTH username AND email are present
