@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -443,14 +444,14 @@ func TestStoreMagicLinkToken(t *testing.T) {
 			name:      "valid token",
 			token:     "tok_abc123",
 			email:     "user@example.com",
-			expiresAt: time.Now().Add(3 * time.Hour),
+			expiresAt: time.Now().UTC().Add(3 * time.Hour),
 			wantErr:   false,
 		},
 		{
 			name:      "another valid token",
 			token:     "tok_xyz789",
 			email:     "another@example.com",
-			expiresAt: time.Now().Add(1 * time.Hour),
+			expiresAt: time.Now().UTC().Add(1 * time.Hour),
 			wantErr:   false,
 		},
 	}
@@ -485,7 +486,7 @@ func TestConsumeMagicLinkToken(t *testing.T) {
 
 	token := "tok_consume123"
 	email := "consumer@example.com"
-	expiresAt := time.Now().Add(3 * time.Hour)
+	expiresAt := time.Now().UTC().Add(3 * time.Hour)
 
 	// Store a token
 	if err := s.StoreMagicLinkToken(token, email, expiresAt); err != nil {
@@ -891,21 +892,21 @@ func TestStoreMagicLinkTokenComprehensive(t *testing.T) {
 			name:      "valid token",
 			email:     "user@example.com",
 			token:     "valid-token-123",
-			expiresAt: time.Now().Add(3 * time.Hour),
+			expiresAt: time.Now().UTC().Add(3 * time.Hour),
 			wantErr:   false,
 		},
 		{
 			name:      "expired token (past)",
 			email:     "user@example.com",
 			token:     "expired-token-456",
-			expiresAt: time.Now().Add(-1 * time.Hour),
+			expiresAt: time.Now().UTC().Add(-1 * time.Hour),
 			wantErr:   false,
 		},
 		{
 			name:      "empty email",
 			email:     "",
 			token:     "token-empty-789",
-			expiresAt: time.Now().Add(3 * time.Hour),
+			expiresAt: time.Now().UTC().Add(3 * time.Hour),
 			wantErr:   false,
 		},
 	}
@@ -1345,12 +1346,12 @@ func TestStoreMagicLinkTokenDuplicateToken(t *testing.T) {
 	email2 := "user2@example.com"
 
 	// Store first token
-	if err := s.StoreMagicLinkToken(token, email1, time.Now().Add(3*time.Hour)); err != nil {
+	if err := s.StoreMagicLinkToken(token, email1, time.Now().UTC().Add(3*time.Hour)); err != nil {
 		t.Fatalf("first insert: %v", err)
 	}
 
 	// Try to store same token with different email
-	err := s.StoreMagicLinkToken(token, email2, time.Now().Add(3*time.Hour))
+	err := s.StoreMagicLinkToken(token, email2, time.Now().UTC().Add(3*time.Hour))
 	if err == nil {
 		t.Fatalf("expected error for duplicate token, got nil")
 	}
@@ -1388,5 +1389,124 @@ func TestMagicLinkTokenRoundTrip(t *testing.T) {
 
 	if retrievedEmail != "" {
 		t.Fatalf("token should be consumed, got email %q", retrievedEmail)
+	}
+}
+
+// TestUpdateUserProfile tests profile update with username and avatar_url.
+func TestUpdateUserProfile(t *testing.T) {
+	s := initTestDB(t)
+	defer s.Close()
+
+	// Create a user with email via magic link flow
+	email := "profile@example.com"
+	token := "profile-token-123"
+	_ = s.StoreMagicLinkToken(token, email, time.Now().UTC().Add(3*time.Hour))
+	consumedEmail, _ := s.ConsumeMagicLinkToken(token)
+
+	u, err := s.GetUserOrCreateByEmail(consumedEmail)
+	if err != nil {
+		t.Fatalf("GetUserOrCreateByEmail(): %v", err)
+	}
+
+	if u.Username != "" {
+		t.Fatalf("new user should have empty username, got %q", u.Username)
+	}
+
+	tests := []struct {
+		name       string
+		username   string
+		avatar     string
+		wantErr    bool
+		wantEnable bool
+	}{
+		{
+			name:       "valid update",
+			username:   "newuser",
+			avatar:     "https://example.com/avatar.jpg",
+			wantErr:    false,
+			wantEnable: true,
+		},
+		{
+			name:       "empty username",
+			username:   "  ",
+			avatar:     "",
+			wantErr:    true,
+			wantEnable: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			updatedUser, err := s.UpdateUserProfile(u.ID, tt.username, tt.avatar)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("UpdateUserProfile() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if tt.wantErr {
+				return
+			}
+
+			if updatedUser.Username != tt.username {
+				t.Fatalf("username = %q, want %q", updatedUser.Username, tt.username)
+			}
+			if updatedUser.AvatarURL != tt.avatar {
+				t.Fatalf("avatar_url = %q, want %q", updatedUser.AvatarURL, tt.avatar)
+			}
+			if updatedUser.Enabled != tt.wantEnable {
+				t.Fatalf("enabled = %v, want %v", updatedUser.Enabled, tt.wantEnable)
+			}
+		})
+	}
+}
+
+// TestUpdateUserProfileDuplicateUsername tests that updating with duplicate
+// username (case-insensitive) fails.
+func TestUpdateUserProfileDuplicateUsername(t *testing.T) {
+	s := initTestDB(t)
+	defer s.Close()
+
+	// Create first user
+	u1, _ := s.GetUserOrCreateByEmail("user1@example.com")
+	s.UpdateUserProfile(u1.ID, "alice", "")
+
+	// Create second user
+	u2, _ := s.GetUserOrCreateByEmail("user2@example.com")
+
+	// Try to update second user with duplicate username (different case)
+	_, err := s.UpdateUserProfile(u2.ID, "ALICE", "")
+	if err == nil {
+		t.Fatalf("UpdateUserProfile() should reject duplicate username, got nil error")
+	}
+	if !strings.Contains(err.Error(), "already in use") {
+		t.Fatalf("expected 'already in use' error, got %v", err)
+	}
+}
+
+// TestEnableUserByEmailValidation tests enabling user after email validation.
+func TestEnableUserByEmailValidation(t *testing.T) {
+	s := initTestDB(t)
+	defer s.Close()
+
+	// Create user via OAuth without username
+	u, _ := s.GetUserOrCreateByOAuth(
+		"github", "12345", "oauth@example.com", "", "")
+
+	if u.Enabled {
+		t.Fatalf("new OAuth user should not be enabled, got enabled=true")
+	}
+
+	// Update profile to add username
+	u, _ = s.UpdateUserProfile(u.ID, "oauthuser", "")
+
+	if !u.Enabled {
+		t.Fatalf("after UpdateUserProfile with username, user should be enabled")
+	}
+
+	// Test direct EnableUserByEmailValidation
+	u2, _ := s.GetUserOrCreateByEmail("direct@example.com")
+	u2, _ = s.UpdateUserProfile(u2.ID, "directuser", "")
+
+	// Should be enabled now
+	if !u2.Enabled {
+		t.Fatalf("user should be enabled after profile update")
 	}
 }

@@ -7,13 +7,18 @@
 
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY,
-    username TEXT,
-    email TEXT,
+    username TEXT UNIQUE COLLATE NOCASE,
+    email TEXT UNIQUE COLLATE NOCASE,
     enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0,1)),
     avatar_url TEXT,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE INDEX IF NOT EXISTS idx_users_username_nocase
+    ON users(LOWER(username)) WHERE username IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_users_email_nocase
+    ON users(LOWER(email)) WHERE email IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS identities (
     id INTEGER PRIMARY KEY,
@@ -29,7 +34,7 @@ CREATE TABLE IF NOT EXISTS identities (
 CREATE INDEX IF NOT EXISTS idx_identities_user_id ON identities(user_id);
 
 CREATE TRIGGER IF NOT EXISTS users_set_updated_at
-AFTER UPDATE OF username, enabled ON users
+AFTER UPDATE OF username, email, enabled, avatar_url ON users
 BEGIN
     UPDATE users SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
 END;

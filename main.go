@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"os"
 	"os/signal"
@@ -77,9 +76,11 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	data := struct {
-		Authed bool
-		User   user.User
-		Config config.Config
+		Authed  bool
+		User    user.User
+		Error   string
+		Message string
+		Config  config.Config
 	}{
 		Authed: authed,
 		User:   u,
@@ -94,18 +95,32 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func loginPageHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Cache-Control", "no-store")
-	sid, ok := session.GetCookie(r)
-	if ok {
-		if _, found := session.Get(sid); found {
+	// If already authenticated, redirect to home
+	if sid, ok := session.GetCookie(r); ok {
+		if _, ok := session.Get(sid); ok {
 			http.Redirect(w, r, config.Cfg.BaseURL+"/", http.StatusFound)
 			return
 		}
 	}
 
+	sid, ok := session.GetCookie(r)
+	var u user.User
+	authed := false
+	if ok {
+		if got, ok := session.Get(sid); ok {
+			u, authed = got, true
+		}
+	}
+
 	data := struct {
-		Config config.Config
+		Authed  bool
+		User    user.User
+		Error   string
+		Message string
+		Config  config.Config
 	}{
+		Authed: authed,
+		User:   u,
 		Config: *config.Cfg,
 	}
 
@@ -249,27 +264,87 @@ func logoutHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func meHandler(w http.ResponseWriter, r *http.Request) {
-	// TODO: Create 'prelude' middleware to check authentication
-	// and use it for other handlers that require auth
-	// e.g. /me, /logout, etc.
-
-	// TODO: change error response to show html page insted of simple server response.
-
-	// TODO: show form with user info and allow updating profile
-
 	w.Header().Set("Cache-Control", "no-store")
+
 	sid, ok := session.GetCookie(r)
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		http.Redirect(w, r, config.Cfg.BaseURL+"/login", http.StatusFound)
 		return
 	}
+
 	u, ok := session.Get(sid)
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		http.Redirect(w, r, config.Cfg.BaseURL+"/login", http.StatusFound)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(u)
+
+	if r.Method == "GET" {
+		// Show profile form
+		data := struct {
+			Authed  bool
+			User    user.User
+			Error   string
+			Message string
+			Config  config.Config
+		}{
+			Authed: true,
+			User:   u,
+			Config: *config.Cfg,
+		}
+		err := templates.ExecuteTemplate(w, "me.go.tmpl", data)
+		if err != nil {
+			log.Printf("template %s execute error: %v", "me.go.tmpl", err)
+			http.Error(w, "template error", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	if r.Method == "POST" {
+		// Process profile update
+		err := r.ParseForm()
+		if err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+
+		username := r.FormValue("username")
+		avatarURL := r.FormValue("avatar_url")
+
+		// Update user profile
+		updatedUser, err := db.Storage.UpdateUserProfile(u.ID, username, avatarURL)
+		if err != nil {
+			log.Printf("error updating user profile: %v", err)
+			// Re-render form with error
+			data := struct {
+				Authed  bool
+				User    user.User
+				Error   string
+				Message string
+				Config  config.Config
+			}{
+				Authed: true,
+				User:   u,
+				Error:  err.Error(),
+				Config: *config.Cfg,
+			}
+			err2 := templates.ExecuteTemplate(w, "me.go.tmpl", data)
+			if err2 != nil {
+				log.Printf("template %s execute error: %v", "me.go.tmpl", err2)
+			}
+			return
+		}
+
+		// Update session with new user data
+		session.Put(sid, *updatedUser)
+
+		log.Printf("user %s updated profile", updatedUser.Email)
+
+		// Redirect to home
+		http.Redirect(w, r, config.Cfg.BaseURL+"/", http.StatusFound)
+		return
+	}
+
+	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 }
 
 func handlerLink(w http.ResponseWriter, r *http.Request) {
@@ -346,7 +421,7 @@ func handlerLoginMagic(w http.ResponseWriter, r *http.Request) {
 	token := utils.RandomString(16)
 
 	// store the token with the email and expiration (15 minutes)
-	err = db.Storage.StoreMagicLinkToken(token, email, time.Now().Add(15*time.Minute))
+	err = db.Storage.StoreMagicLinkToken(token, email, time.Now().UTC().Add(15*time.Minute))
 	if err != nil {
 		log.Printf("error storing magic link token: %v", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)

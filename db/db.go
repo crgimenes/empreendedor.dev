@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -415,11 +416,11 @@ func (s *SQLite) PurgeExpiredMagicLinkTokens() error {
 
 func (s *SQLite) GetUserOrCreateByEmail(email string) (*user.User, error) {
 	const sqlSelect = `SELECT
-            id,          -- 1
-            username,    -- 2
-            email,       -- 3
-            avatar_url,  -- 4
-            enabled      -- 5
+            id,                         -- 1
+            COALESCE(username, ''),     -- 2
+            email,                      -- 3
+            COALESCE(avatar_url, ''),   -- 4
+            enabled                     -- 5
         FROM users
         WHERE email = ?  -- 1
         LIMIT 1;`
@@ -451,40 +452,51 @@ func (s *SQLite) GetUserOrCreateByEmail(email string) (*user.User, error) {
 		return nil, err
 	}
 
+	if err == nil {
+		// User already exists
+		return &u, nil
+	}
+
 	const sqlInsert = `INSERT INTO users (
             email,             -- 1
-            username,          -- 2
             created_at,
             updated_at
         ) VALUES (
             ?,                 -- 1
-            ?,                 -- 2
             CURRENT_TIMESTAMP, -- created_at
             CURRENT_TIMESTAMP  -- updated_at
         )
-        RETURNING id;`
+        RETURNING
+            id,
+            COALESCE(username, ''),
+            email,
+            COALESCE(avatar_url, ''),
+            enabled;`
 
 	err = s.QueryRowRW(
 		sqlInsert,
 		email, // 1
-		email, // 2 // TODO: generate better username
-	).Scan(&u.ID)
+	).Scan(
+		&u.ID,        // 1
+		&u.Username,  // 2
+		&u.Email,     // 3
+		&u.AvatarURL, // 4
+		&u.Enabled,   // 5
+	)
 	if err != nil {
 		return nil, err
 	}
-
-	u.Email = email
 
 	return &u, nil
 }
 
 func (s *SQLite) GetUserByID(userID int64) (*user.User, error) {
 	const sqlSelect = `SELECT
-            id,          -- 1
-            username,    -- 2
-            email,       -- 3
-            avatar_url,  -- 4
-            enabled      -- 5
+            id,                         -- 1
+            COALESCE(username, ''),     -- 2
+            email,                      -- 3
+            COALESCE(avatar_url, ''),   -- 4
+            enabled                     -- 5
         FROM users
         WHERE id = ?  -- 1
         LIMIT 1;`
@@ -500,6 +512,134 @@ func (s *SQLite) GetUserByID(userID int64) (*user.User, error) {
 		&u.Email,     // 3
 		&u.AvatarURL, // 4
 		&u.Enabled,   // 5
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &u, nil
+}
+
+// UpdateUserProfile updates username, avatar_url and enables user if email is
+// already validated (email must be non-empty). Validates that username and
+// email are not duplicated (case-insensitive). Returns the updated user or
+// error if validation fails or SQL error occurs.
+func (s *SQLite) UpdateUserProfile(
+	userID int64,
+	username string,
+	avatarURL string) (*user.User, error) {
+
+	if userID == 0 {
+		return nil, errors.New("user_id is required")
+	}
+
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return nil, errors.New("username is required")
+	}
+
+	avatarURL = strings.TrimSpace(avatarURL)
+
+	// Get current user to verify email is present
+	currentUser, err := s.GetUserByID(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	if currentUser.Email == "" {
+		return nil, errors.New("user has no email; cannot enable account")
+	}
+
+	// Check username uniqueness (case-insensitive)
+	const sqlCheckUsername = `SELECT COUNT(*) FROM users
+		WHERE LOWER(username) = LOWER(?)
+		AND id != ?
+		LIMIT 1;`
+
+	var count int
+	err = s.QueryRow(sqlCheckUsername, username, userID).Scan(&count)
+	if err != nil {
+		return nil, err
+	}
+	if count > 0 {
+		return nil, errors.New("username is already in use")
+	}
+
+	// Update user: set username, avatar_url, and enable
+	const sqlUpdate = `UPDATE users
+		SET
+			username = ?,    -- 1
+			avatar_url = ?,  -- 2
+			enabled = 1
+		WHERE id = ?         -- 3
+		RETURNING
+			id,
+			COALESCE(username, ''),
+			email,
+			COALESCE(avatar_url, ''),
+			enabled;`
+
+	var u user.User
+	err = s.QueryRowRW(
+		sqlUpdate,
+		username,  // 1
+		avatarURL, // 2
+		userID,    // 3
+	).Scan(
+		&u.ID,
+		&u.Username,
+		&u.Email,
+		&u.AvatarURL,
+		&u.Enabled,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &u, nil
+}
+
+// EnableUserByEmailValidation enables a user if they have both username and
+// email. This is called after email is validated via magic link or OAuth.
+// Returns the updated user or error if not found or already enabled.
+func (s *SQLite) EnableUserByEmailValidation(userID int64) (*user.User, error) {
+
+	if userID == 0 {
+		return nil, errors.New("user_id is required")
+	}
+
+	// Get current user
+	currentUser, err := s.GetUserByID(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	if currentUser.Email == "" {
+		return nil, errors.New("user has no email; cannot enable")
+	}
+
+	if currentUser.Username == "" {
+		return nil, errors.New("user has no username; cannot enable")
+	}
+
+	// Enable user
+	const sqlEnable = `UPDATE users
+		SET enabled = 1
+		WHERE id = ?
+		RETURNING
+			id,
+			COALESCE(username, ''),
+			email,
+			COALESCE(avatar_url, ''),
+			enabled;`
+
+	var u user.User
+	err = s.QueryRowRW(sqlEnable, userID).Scan(
+		&u.ID,
+		&u.Username,
+		&u.Email,
+		&u.AvatarURL,
+		&u.Enabled,
 	)
 	if err != nil {
 		return nil, err
@@ -545,10 +685,16 @@ func (s *SQLite) GetUserOrCreateByOAuth(
             CURRENT_TIMESTAMP, -- created_at
             CURRENT_TIMESTAMP  -- updated_at
         )
-        RETURNING id;`
+        RETURNING
+            id,
+            COALESCE(username, ''),
+            email,
+            COALESCE(avatar_url, ''),
+            enabled;`
 
-	// enabled is true if email is verified (for OAuth, we assume it is).
-	enabled := email != ""
+	// enabled is true only if BOTH username AND email are present
+	// (we assume email is validated by OAuth provider if present)
+	enabled := email != "" && username != ""
 
 	err = s.QueryRowRW(
 		sqlInsert,
@@ -556,7 +702,13 @@ func (s *SQLite) GetUserOrCreateByOAuth(
 		username,  // 2
 		avatarURL, // 3
 		enabled,   // 4
-	).Scan(&u.ID)
+	).Scan(
+		&u.ID,
+		&u.Username,
+		&u.Email,
+		&u.AvatarURL,
+		&u.Enabled,
+	)
 	if err != nil {
 		return nil, err
 	}
