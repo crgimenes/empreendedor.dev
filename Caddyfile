@@ -1,0 +1,36 @@
+# Caddyfile — empreendedor.dev (SSE + WebSocket)
+
+empreendedor.dev {
+	encode zstd gzip
+
+	@sse path /events
+	@ws  path /ws
+
+	# --- SSE ---
+	reverse_proxy @sse godel:3210 {
+		header_up Host {http.request.host}
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-For {remote_host}
+		header_down Cache-Control "no-cache"
+		header_down Pragma "no-cache"
+		header_down X-Accel-Buffering "no"
+	}
+
+	# --- WebSocket ---
+	reverse_proxy @ws godel:3210 {
+		header_up Host {http.request.host}
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-For {remote_host}
+	}
+
+	# --- HTTP ---
+	reverse_proxy godel:3210 {
+		header_up Host {http.request.host}
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-For {remote_host}
+	}
+
+	# direct rout health-check
+	respond /healthz 200
+}
+
