@@ -7,6 +7,7 @@
 
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY,
+    reference_id TEXT NOT NULL UNIQUE DEFAULT "", -- a trigger will set this to a UUID
     username TEXT UNIQUE COLLATE NOCASE,
     email TEXT UNIQUE COLLATE NOCASE,
     enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0,1)),
@@ -19,6 +20,8 @@ CREATE INDEX IF NOT EXISTS idx_users_username_nocase
     ON users(LOWER(username)) WHERE username IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_users_email_nocase
     ON users(LOWER(email)) WHERE email IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_users_enabled ON users(enabled);
+CREATE INDEX IF NOT EXISTS idx_users_reference_id ON users(reference_id);
 
 CREATE TABLE IF NOT EXISTS identities (
     id INTEGER PRIMARY KEY,
@@ -43,6 +46,23 @@ CREATE TRIGGER IF NOT EXISTS identities_set_updated_at
 AFTER UPDATE OF user_id, provider, provider_uid, avatar_url ON identities
 BEGIN
     UPDATE identities SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS users_reference_uuid
+AFTER INSERT ON users
+BEGIN
+  UPDATE users
+  SET reference_id = ( 
+    select substr(u,1,8)||'-'|| 
+    substr(u,9,4)||'-4'|| 
+    substr(u,13,3)||'-'||v|| 
+    substr(u,17,3)||'-'|| 
+    substr(u,21,12) from ( 
+        select 
+            lower(hex(randomblob(16))) as u, 
+            substr('89ab',abs(random()) % 4 + 1, 1) as v)
+    )
+  WHERE id = NEW.id;
 END;
 
 --
