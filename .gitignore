@@ -38,5 +38,7 @@ empreendedor.dev-linux-amd64
 .DS_Store
 
 *.db*
+*.gob
+
 nonfree
 
