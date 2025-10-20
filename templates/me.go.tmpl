@@ -15,16 +15,24 @@
                         <h1 class="card-title mb-4">Meu Perfil</h1>
 
                         {{if .Error}}
-                            <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                            <div class="alert alert-danger alert-dismissible fade show" 
+                                role="alert">
                                 {{.Error}}
-                                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                                <button type="button" 
+                                    class="btn-close" 
+                                    data-bs-dismiss="alert" 
+                                    aria-label="Close"></button>
                             </div>
                         {{end}}
 
                         {{if .Message}}
-                            <div class="alert alert-success alert-dismissible fade show" role="alert">
+                            <div class="alert alert-success alert-dismissible fade show" 
+                                role="alert">
                                 {{.Message}}
-                                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                                <button type="button" 
+                                    class="btn-close" 
+                                    data-bs-dismiss="alert" 
+                                    aria-label="Close"></button>
                             </div>
                         {{end}}
 
@@ -39,8 +47,12 @@
 
                             <!-- Username -->
                             <div class="mb-3">
-                                <label for="username" class="form-label">Nome de usuario</label>
-                                <input type="text" class="form-control" id="username" name="username" 
+                                <label for="username" 
+                                    class="form-label">Nome de usuario</label>
+                                <input type="text" 
+                                       class="form-control" 
+                                       id="username" 
+                                       name="username" 
                                     value="{{.User.Username}}" required
                                     placeholder="Escolha um nome de usuario">
                                 <small class="form-text text-muted">
@@ -51,7 +63,10 @@
                             <!-- Avatar URL -->
                             <div class="mb-3">
                                 <label for="avatar_url" class="form-label">URL do Avatar</label>
-                                <input type="url" class="form-control" id="avatar_url" name="avatar_url" 
+                                <input type="url" 
+                                       class="form-control" 
+                                       id="avatar_url" 
+                                       name="avatar_url" 
                                     value="{{.User.AvatarURL}}"
                                     placeholder="https://exemplo.com/avatar.jpg">
                                 {{if .User.AvatarURL}}
