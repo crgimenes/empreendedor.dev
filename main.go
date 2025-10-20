@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -67,9 +68,22 @@ func (w *respWriter) WriteHeader(code int) {
 }
 
 func indexHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Cache-Control", "no-store")
+	_, _, _, err := prelude(w, r,
+		[]string{
+			http.MethodGet,
+		},
+		false, // check auth
+		false, // check ratelimit
+		true,  // prevent cache
+	)
+	if err != nil {
+		log.Printf("prelude error: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
 	sid, ok := session.GetCookie(r)
-	var u user.User
+	u := user.User{}
 	authed := false
 	if ok {
 		if got, ok := session.Get(sid); ok {
@@ -93,7 +107,7 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 		Config:  *config.Cfg,
 	}
 
-	err := templates.ExecuteTemplate(w, "index.go.tmpl", data)
+	err = templates.ExecuteTemplate(w, "index.go.tmpl", data)
 	if err != nil {
 		log.Printf("template %s execute error: %v", "index.go.tmpl", err)
 		http.Error(w, "template error", http.StatusInternalServerError)
@@ -101,22 +115,34 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func loginPageHandler(w http.ResponseWriter, r *http.Request) {
+	// prelude
+	_, _, _, err := prelude(w, r,
+		[]string{
+			http.MethodGet,
+		},
+		false, // check auth
+		false, // check ratelimit
+		true,  // prevent cache
+	)
+	if err != nil {
+		log.Printf("prelude error: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
 	// If already authenticated, redirect to home
-	if sid, ok := session.GetCookie(r); ok {
-		if _, ok := session.Get(sid); ok {
+	sid, ok := session.GetCookie(r)
+	if ok {
+		_, ok := session.Get(sid)
+		if ok {
 			http.Redirect(w, r, config.Cfg.BaseURL+"/", http.StatusFound)
 			return
 		}
 	}
 
-	sid, ok := session.GetCookie(r)
 	var u user.User
 	authed := false
-	if ok {
-		if got, ok := session.Get(sid); ok {
-			u, authed = got, true
-		}
-	}
+	u, authed = session.Get(sid)
 
 	data := struct {
 		Authed  bool
@@ -130,7 +156,7 @@ func loginPageHandler(w http.ResponseWriter, r *http.Request) {
 		Config: *config.Cfg,
 	}
 
-	err := templates.ExecuteTemplate(w, "login.go.tmpl", data)
+	err = templates.ExecuteTemplate(w, "login.go.tmpl", data)
 	if err != nil {
 		log.Printf("template %s execute error: %v", "login.go.tmpl", err)
 		http.Error(w, "template error", http.StatusInternalServerError)
@@ -269,19 +295,72 @@ func logoutHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, config.Cfg.BaseURL+"/", http.StatusFound)
 }
 
-func meHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Cache-Control", "no-store")
+// prelude checks authentication and returns the user or redirects to login.
+func prelude(
+	w http.ResponseWriter,
+	r *http.Request,
+	allowedMethods []string,
+	chkAuth bool,
+	chkRatelimit bool,
+	preventCache bool,
+) (
+	*user.User,
+	string, // session id
+	bool, // authenticated
+	error) {
+	if preventCache {
+		w.Header().Set("Cache-Control", "no-store")
+	}
+
+	if len(allowedMethods) > 0 {
+		methodAllowed := slices.Contains(allowedMethods, r.Method)
+		if !methodAllowed {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return nil, "", false, nil
+		}
+	}
+
+	if !chkAuth {
+		return nil, "", false, nil
+	}
+
+	if chkRatelimit {
+		// not implemented yet
+	}
 
 	sid, ok := session.GetCookie(r)
 	if !ok {
 		http.Redirect(w, r, config.Cfg.BaseURL+"/login", http.StatusFound)
-		return
+		return nil, "", false, nil
 	}
 
 	u, ok := session.Get(sid)
 	if !ok {
 		http.Redirect(w, r, config.Cfg.BaseURL+"/login", http.StatusFound)
+		return nil, "", false, nil
+	}
+
+	return &u, sid, true, nil
+}
+
+func meHandler(w http.ResponseWriter, r *http.Request) {
+	u, sid, authed, err := prelude(w, r,
+		[]string{
+			http.MethodGet,
+			http.MethodPost,
+		},
+		true,  // check auth
+		false, // check ratelimit
+		true,  // prevent cache
+	)
+	if err != nil {
+		log.Printf("prelude error: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
+	}
+
+	if !authed {
+		return // prelude already handled redirect
 	}
 
 	if r.Method == "GET" {
@@ -294,7 +373,7 @@ func meHandler(w http.ResponseWriter, r *http.Request) {
 			Config  config.Config
 		}{
 			Authed: true,
-			User:   u,
+			User:   *u,
 			Config: *config.Cfg,
 		}
 		err := templates.ExecuteTemplate(w, "me.go.tmpl", data)
@@ -329,7 +408,7 @@ func meHandler(w http.ResponseWriter, r *http.Request) {
 				Config  config.Config
 			}{
 				Authed: true,
-				User:   u,
+				User:   *u,
 				Error:  err.Error(),
 				Config: *config.Cfg,
 			}
@@ -354,7 +433,20 @@ func meHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func handlerLink(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Cache-Control", "no-store")
+	u, _, _, err := prelude(w, r,
+		[]string{
+			http.MethodGet,
+		},
+		false, // check auth
+		false, // check ratelimit
+		true,  // prevent cache
+	)
+	if err != nil {
+		log.Printf("prelude error: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
 	token := r.PathValue("token")
 
 	if token == "" {
@@ -373,7 +465,7 @@ func handlerLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	u, err := db.Storage.GetUserOrCreateByEmail(email)
+	u, err = db.Storage.GetUserOrCreateByEmail(email)
 	if err != nil {
 		log.Printf("error getting or creating user by email: %v", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -399,18 +491,21 @@ func handlerLink(w http.ResponseWriter, r *http.Request) {
 }
 
 func handlerLoginMagic(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	w.Header().Set("Cache-Control", "no-store")
-	if r.Method != "POST" {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	err := r.ParseForm()
+	// prelude
+	_, _, _, err := prelude(w, r,
+		[]string{
+			http.MethodPost,
+		},
+		false, // check auth
+		false, // check ratelimit
+		true,  // prevent cache
+	)
 	if err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
+		log.Printf("prelude error: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
+
 	email := r.FormValue("email")
 	if email == "" {
 		http.Error(w, "email is required", http.StatusBadRequest)
@@ -440,9 +535,9 @@ func handlerLoginMagic(w http.ResponseWriter, r *http.Request) {
 		From:    "noreply@" + strings.TrimPrefix(config.Cfg.BaseURL, "https://"),
 		To:      []string{email},
 		Subject: "Seu link de acesso magico",
-		Text: "Clique no link para fazer login: " +
+		Text: "Clique no link para fazer login:\n\t" +
 			link +
-			"\nEste link expira em 15 minutos.\n--\nEdev",
+			"\n\nEste link expira em 15 minutos.\n--\n",
 	})
 	if err != nil {
 		log.Printf("error sending magic link email: %v", err)
@@ -452,7 +547,10 @@ func handlerLoginMagic(w http.ResponseWriter, r *http.Request) {
 	log.Printf("sent magic link email to %s, id=%s", email, ret)
 
 	// Return redirect URL
-	redirectURL := config.Cfg.BaseURL + "/?message=" + url.QueryEscape("Link de acesso enviado! Verifique seu email.")
+	redirectURL := config.Cfg.BaseURL +
+		"/?message=" +
+		url.QueryEscape("Link de acesso enviado! Verifique seu email.")
+
 	http.Redirect(w, r, redirectURL, http.StatusFound)
 
 }
