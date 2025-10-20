@@ -468,10 +468,11 @@ func (s *SQLite) PurgeExpiredMagicLinkTokens() error {
 func (s *SQLite) GetUserOrCreateByEmail(email string) (*user.User, error) {
 	const sqlSelect = `SELECT
             id,                         -- 1
-            COALESCE(username, ''),     -- 2
-            email,                      -- 3
-            COALESCE(avatar_url, ''),   -- 4
-            enabled                     -- 5
+            reference_id,               -- 2
+            COALESCE(username, ''),     -- 3
+            email,                      -- 4
+            COALESCE(avatar_url, ''),   -- 5
+            enabled                     -- 6
         FROM users
         WHERE email = ?  -- 1
         LIMIT 1;`
@@ -487,11 +488,12 @@ func (s *SQLite) GetUserOrCreateByEmail(email string) (*user.User, error) {
 		sqlSelect,
 		email, // 1
 	).Scan(
-		&u.ID,        // 1
-		&u.Username,  // 2
-		&u.Email,     // 3
-		&u.AvatarURL, // 4
-		&u.Enabled,   // 5
+		&u.ID,          // 1
+		&u.ReferenceID, // 2
+		&u.Username,    // 3
+		&u.Email,       // 4
+		&u.AvatarURL,   // 5
+		&u.Enabled,     // 6
 	)
 	if err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
@@ -518,21 +520,23 @@ func (s *SQLite) GetUserOrCreateByEmail(email string) (*user.User, error) {
             CURRENT_TIMESTAMP  -- updated_at
         )
         RETURNING
-            id,
-            COALESCE(username, ''),
-            email,
-            COALESCE(avatar_url, ''),
-            enabled;`
+            id,                        -- 1
+            reference_id,              -- 2
+            COALESCE(username, ''),    -- 3
+            email,                     -- 4
+            COALESCE(avatar_url, ''),  -- 5
+            enabled;` // 6
 
 	err = s.QueryRowRW(
 		sqlInsert,
 		email, // 1
 	).Scan(
-		&u.ID,        // 1
-		&u.Username,  // 2
-		&u.Email,     // 3
-		&u.AvatarURL, // 4
-		&u.Enabled,   // 5
+		&u.ID,          // 1
+		&u.ReferenceID, // 2
+		&u.Username,    // 3
+		&u.Email,       // 4
+		&u.AvatarURL,   // 5
+		&u.Enabled,     // 6
 	)
 	if err != nil {
 		return nil, err
@@ -544,10 +548,11 @@ func (s *SQLite) GetUserOrCreateByEmail(email string) (*user.User, error) {
 func (s *SQLite) GetUserByID(userID int64) (*user.User, error) {
 	const sqlSelect = `SELECT
             id,                         -- 1
-            COALESCE(username, ''),     -- 2
-            email,                      -- 3
-            COALESCE(avatar_url, ''),   -- 4
-            enabled                     -- 5
+            reference_id,               -- 2
+            COALESCE(username, ''),     -- 3
+            email,                      -- 4
+            COALESCE(avatar_url, ''),   -- 5
+            enabled                     -- 6
         FROM users
         WHERE id = ?  -- 1
         LIMIT 1;`
@@ -558,11 +563,12 @@ func (s *SQLite) GetUserByID(userID int64) (*user.User, error) {
 		sqlSelect,
 		userID, // 1
 	).Scan(
-		&u.ID,        // 1
-		&u.Username,  // 2
-		&u.Email,     // 3
-		&u.AvatarURL, // 4
-		&u.Enabled,   // 5
+		&u.ID,          // 1
+		&u.ReferenceID, // 2
+		&u.Username,    // 3
+		&u.Email,       // 4
+		&u.AvatarURL,   // 5
+		&u.Enabled,     // 6
 	)
 	if err != nil {
 		return nil, err
@@ -631,11 +637,12 @@ func (s *SQLite) MergeOAuthProfileData(
             enabled = ?      -- 3
         WHERE id = ?         -- 4
         RETURNING
-            id,
-            COALESCE(username, ''),
-            email,
-            COALESCE(avatar_url, ''),
-            enabled;`
+            id,                       -- 1
+            reference_id,             -- 2
+            COALESCE(username, ''),   -- 3
+            email,                    -- 4
+            COALESCE(avatar_url, ''), -- 5
+            enabled;` // 6
 
 	var u user.User
 	enabled := 0
@@ -650,11 +657,12 @@ func (s *SQLite) MergeOAuthProfileData(
 		enabled,      // 3
 		userID,       // 4
 	).Scan(
-		&u.ID,
-		&u.Username,
-		&u.Email,
-		&u.AvatarURL,
-		&u.Enabled,
+		&u.ID,          // 1
+		&u.ReferenceID, // 2
+		&u.Username,    // 3
+		&u.Email,       // 4
+		&u.AvatarURL,   // 5
+		&u.Enabled,     // 6
 	)
 	if err != nil {
 		return nil, err
@@ -716,11 +724,12 @@ func (s *SQLite) UpdateUserProfile(
             enabled = 1
         WHERE id = ?         -- 3
         RETURNING
-            id,
-            COALESCE(username, ''),
-            email,
-            COALESCE(avatar_url, ''),
-            enabled;`
+            id,                        -- 1
+            reference_id,              -- 2
+            COALESCE(username, ''),    -- 3
+            email,                     -- 4
+            COALESCE(avatar_url, ''),  -- 5
+            enabled;` // 6
 
 	var u user.User
 	err = s.QueryRowRW(
@@ -729,11 +738,12 @@ func (s *SQLite) UpdateUserProfile(
 		avatarURL, // 2
 		userID,    // 3
 	).Scan(
-		&u.ID,
-		&u.Username,
-		&u.Email,
-		&u.AvatarURL,
-		&u.Enabled,
+		&u.ID,          // 1
+		&u.ReferenceID, // 2
+		&u.Username,    // 3
+		&u.Email,       // 4
+		&u.AvatarURL,   // 5
+		&u.Enabled,     // 6
 	)
 	if err != nil {
 		return nil, err
@@ -770,19 +780,21 @@ func (s *SQLite) EnableUserByEmailValidation(userID int64) (*user.User, error) {
         SET enabled = 1
         WHERE id = ?
         RETURNING
-            id,
-            COALESCE(username, ''),
-            email,
-            COALESCE(avatar_url, ''),
-            enabled;`
+            id,                       -- 1
+            reference_id,             -- 2
+            COALESCE(username, ''),   -- 3
+            email,                    -- 4
+            COALESCE(avatar_url, ''), -- 5
+            enabled;` // 6
 
 	var u user.User
 	err = s.QueryRowRW(sqlEnable, userID).Scan(
-		&u.ID,
-		&u.Username,
-		&u.Email,
-		&u.AvatarURL,
-		&u.Enabled,
+		&u.ID,          // 1
+		&u.ReferenceID, // 2
+		&u.Username,    // 3
+		&u.Email,       // 4
+		&u.AvatarURL,   // 5
+		&u.Enabled,     // 6
 	)
 	if err != nil {
 		return nil, err
@@ -888,11 +900,12 @@ func (s *SQLite) GetUserOrCreateByOAuth(
             CURRENT_TIMESTAMP  -- updated_at
         )
         RETURNING
-            id,
-            COALESCE(username, ''),
-            email,
-            COALESCE(avatar_url, ''),
-            enabled;`
+            id,                          -- 1
+            reference_id,               -- 2
+            COALESCE(username, ''),   -- 3
+            email,                       -- 4
+            COALESCE(avatar_url, ''), -- 5
+            enabled;` // 6
 
 	// enabled is true only if BOTH username AND email are present
 	// (we assume email is validated by OAuth provider if present)
@@ -905,11 +918,12 @@ func (s *SQLite) GetUserOrCreateByOAuth(
 		avatarURL,      // 3
 		enabled,        // 4
 	).Scan(
-		&u.ID,
-		&u.Username,
-		&u.Email,
-		&u.AvatarURL,
-		&u.Enabled,
+		&u.ID,          // 1
+		&u.ReferenceID, // 2
+		&u.Username,    // 3
+		&u.Email,       // 4
+		&u.AvatarURL,   // 5
+		&u.Enabled,     // 6
 	)
 	if err != nil {
 		return nil, err

@@ -329,6 +329,7 @@ func initTestDB(t *testing.T) *SQLite {
 	statements := []string{
 		`CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY,
+	reference_id TEXT NOT NULL UNIQUE DEFAULT "", -- a trigger will set this to a UUID
     username TEXT,
     email TEXT,
     enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0,1)),
@@ -355,6 +356,23 @@ func initTestDB(t *testing.T) *SQLite {
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     expires_at DATETIME NOT NULL DEFAULT (DATETIME('now', '+3 hour'))
 )`,
+		`CREATE TRIGGER IF NOT EXISTS users_reference_uuid
+AFTER INSERT ON users
+BEGIN
+  UPDATE users
+  SET reference_id = (
+    select substr(u,1,8)||'-'||
+    substr(u,9,4)||'-4'||
+    substr(u,13,3)||'-'||v||
+    substr(u,17,3)||'-'||
+    substr(u,21,12) from (
+        select
+            lower(hex(randomblob(16))) as u,
+            substr('89ab',abs(random()) % 4 + 1, 1) as v)
+    )
+  WHERE id = NEW.id;
+END;
+`,
 	}
 
 	for _, stmt := range statements {
