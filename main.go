@@ -490,6 +490,13 @@ func main() {
 		}
 	}()
 
+	// Load sessions from file
+	err = session.LoadFromGobFile("sessions.gob")
+	if err != nil {
+		log.Printf("Session load error: %v", err)
+		return
+	}
+
 	mux := http.NewServeMux()
 
 	fileServer := http.FileServer(assets.FS)
@@ -561,9 +568,17 @@ func main() {
 		5*time.Second)
 	defer cancel()
 
-	if err := srv.Shutdown(ctx); err != nil {
+	// Save sessions to file
+	err = session.SaveToGobFile("sessions.gob")
+	if err != nil {
+		log.Printf("Session save error: %v", err)
+	}
+
+	err = srv.Shutdown(ctx)
+	if err != nil {
 		log.Printf("Shutdown error: %v", err)
 	}
+
 	if db.Storage != nil {
 		db.Storage.Close()
 	}

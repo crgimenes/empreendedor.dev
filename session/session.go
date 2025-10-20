@@ -5,7 +5,11 @@ In-memory session store (opaque SID -> user.User).
 */
 
 import (
+	"bytes"
+	"encoding/gob"
+	"log"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -13,8 +17,8 @@ import (
 )
 
 type session struct {
-	User      user.User
-	ExpiresAt int64
+	User      user.User `json:"user"`
+	ExpiresAt int64     `json:"expires_at"`
 }
 
 var (
@@ -27,6 +31,81 @@ var (
 
 	MaxSessionAge = int64(3600 * 3) // 3 hours in seconds
 )
+
+// imports necessários:
+// import (
+//     "bytes"
+//     "encoding/gob"
+//     "encoding/json"
+// )
+
+func Serialize() ([]byte, error) {
+	sessions.RLock()
+	defer sessions.RUnlock()
+
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+	err := enc.Encode(sessions.m)
+	if err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func Deserialize(b []byte) error {
+	dec := gob.NewDecoder(bytes.NewReader(b))
+	s := make(map[string]session)
+	err := dec.Decode(&s)
+	if err != nil {
+		return err
+	}
+
+	sessions.Lock()
+	sessions.m = s
+	sessions.Unlock()
+	return nil
+}
+
+func LoadFromGobFile(filename string) error {
+	bb, err := os.ReadFile(filename)
+	if err != nil {
+		if os.IsNotExist(err) {
+			log.Printf("No existing session file found, starting fresh")
+			return nil
+		}
+		return err
+	}
+	err = Deserialize(bb)
+	if err != nil {
+		log.Printf("Session deserialization error: %v", err)
+		return err
+	}
+	log.Printf("Restored %d sessions from file", Count())
+
+	return nil
+}
+
+func SaveToGobFile(filename string) error {
+	ss, err := Serialize()
+	if err != nil {
+		return err
+	}
+
+	err = os.WriteFile(filename, ss, 0600)
+	if err != nil {
+		return err
+	}
+
+	log.Printf("Saved %d sessions to file", Count())
+	return nil
+}
+
+func Count() int {
+	sessions.RLock()
+	n := len(sessions.m)
+	sessions.RUnlock()
+	return n
+}
 
 func Put(sid string, u user.User) {
 	s := session{
