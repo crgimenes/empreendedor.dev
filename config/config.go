@@ -19,6 +19,8 @@ type Config struct {
 	XClientSecret      string
 	XOAuthEnabled      bool
 	SessionDuration    time.Duration
+	UploadPath         string // file upload storage path (temporary before processing)
+	DataPath           string //  procesed files storage path
 }
 
 var Cfg = &Config{
@@ -27,7 +29,10 @@ var Cfg = &Config{
 	GitTag:          "dev",
 	DBFile:          "edev.db",
 	SessionDuration: 10 * 24 * time.Hour, // 10 days
+	UploadPath:      "./uploads",
+	DataPath:        "./data",
 
+	FakeOAuthEnabled:  false,
 	FakeOAuthRedirect: "/fake/oauth/callback",
 	FakeOAuthBaseURL:  "http://127.0.0.1:9100",
 	FakeOAuthClientID: "fake-client-id",
