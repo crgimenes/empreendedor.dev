@@ -21,7 +21,6 @@ import (
 	"edev/config"
 	"edev/log"
 	"edev/mail"
-	"edev/user"
 	"edev/utils"
 )
 
@@ -465,7 +464,7 @@ func (s *SQLite) PurgeExpiredMagicLinkTokens() error {
 	return s.Exec(sqlStatement)
 }
 
-func (s *SQLite) GetUserOrCreateByEmail(email string) (*user.User, error) {
+func (s *SQLite) GetUserOrCreateByEmail(email string) (*User, error) {
 	const sqlSelect = `SELECT
             id,                         -- 1
             reference_id,               -- 2
@@ -477,7 +476,7 @@ func (s *SQLite) GetUserOrCreateByEmail(email string) (*user.User, error) {
         WHERE email = ?  -- 1
         LIMIT 1;`
 
-	var u user.User
+	var u User
 
 	email, err := mail.CanonicalizeEmail(email)
 	if err != nil {
@@ -545,7 +544,7 @@ func (s *SQLite) GetUserOrCreateByEmail(email string) (*user.User, error) {
 	return &u, nil
 }
 
-func (s *SQLite) GetUserByID(userID int64) (*user.User, error) {
+func (s *SQLite) GetUserByID(userID int64) (*User, error) {
 	const sqlSelect = `SELECT
             id,                         -- 1
             reference_id,               -- 2
@@ -557,7 +556,7 @@ func (s *SQLite) GetUserByID(userID int64) (*user.User, error) {
         WHERE id = ?  -- 1
         LIMIT 1;`
 
-	var u user.User
+	var u User
 
 	err := s.QueryRow(
 		sqlSelect,
@@ -579,7 +578,7 @@ func (s *SQLite) GetUserByID(userID int64) (*user.User, error) {
 
 // MergeOAuthProfileData merges OAuth provider data into existing user,
 // updating only blank fields.
-// It updates username (with conflict resolution) if user.Username is
+// It updates username (with conflict resolution) if Username is
 // empty and oauthUsername is provided.
 // It updates avatar_url if user.AvatarURL is empty and oauthAvatarURL is provided.
 // Returns updated user with enabled=true if both username and email
@@ -587,7 +586,7 @@ func (s *SQLite) GetUserByID(userID int64) (*user.User, error) {
 func (s *SQLite) MergeOAuthProfileData(
 	userID int64,
 	oauthUsername string,
-	oauthAvatarURL string) (*user.User, error) {
+	oauthAvatarURL string) (*User, error) {
 
 	if userID == 0 {
 		return nil, errors.New("user_id is required")
@@ -644,7 +643,7 @@ func (s *SQLite) MergeOAuthProfileData(
             COALESCE(avatar_url, ''), -- 5
             enabled;` // 6
 
-	var u user.User
+	var u User
 	enabled := 0
 	if shouldBeEnabled {
 		enabled = 1
@@ -678,7 +677,7 @@ func (s *SQLite) MergeOAuthProfileData(
 func (s *SQLite) UpdateUserProfile(
 	userID int64,
 	username string,
-	avatarURL string) (*user.User, error) {
+	avatarURL string) (*User, error) {
 
 	if userID == 0 {
 		return nil, errors.New("user_id is required")
@@ -731,7 +730,7 @@ func (s *SQLite) UpdateUserProfile(
             COALESCE(avatar_url, ''),  -- 5
             enabled;` // 6
 
-	var u user.User
+	var u User
 	err = s.QueryRowRW(
 		sqlUpdate,
 		username,  // 1
@@ -755,7 +754,7 @@ func (s *SQLite) UpdateUserProfile(
 // EnableUserByEmailValidation enables a user if they have both username and
 // email. This is called after email is validated via magic link or OAuth.
 // Returns the updated user or error if not found or already enabled.
-func (s *SQLite) EnableUserByEmailValidation(userID int64) (*user.User, error) {
+func (s *SQLite) EnableUserByEmailValidation(userID int64) (*User, error) {
 
 	if userID == 0 {
 		return nil, errors.New("user_id is required")
@@ -787,7 +786,7 @@ func (s *SQLite) EnableUserByEmailValidation(userID int64) (*user.User, error) {
             COALESCE(avatar_url, ''), -- 5
             enabled;` // 6
 
-	var u user.User
+	var u User
 	err = s.QueryRowRW(sqlEnable, userID).Scan(
 		&u.ID,          // 1
 		&u.ReferenceID, // 2
@@ -808,7 +807,7 @@ func (s *SQLite) GetUserOrCreateByOAuth(
 	providerID string,
 	email string,
 	username string,
-	avatarURL string) (*user.User, error) {
+	avatarURL string) (*User, error) {
 
 	// First, check if we have an existing OAuth identity for this provider/providerID
 	userID, err := s.GetUserByOAuthProviderID(provider, providerID)
@@ -877,7 +876,7 @@ func (s *SQLite) GetUserOrCreateByOAuth(
 		}
 	}
 
-	u := user.User{
+	u := User{
 		Username:  actualUsername,
 		Email:     email,
 		AvatarURL: avatarURL,
@@ -955,4 +954,186 @@ func (s *SQLite) GetUserOrCreateByOAuth(
 	}
 
 	return &u, nil
+}
+
+func (s *SQLite) SaveFileMetadata(f *File) (*File, error) {
+	if f == nil {
+		return nil, errors.New("file metadata is required")
+	}
+
+	const sqlInsert = `INSERT INTO filemanager_files (
+            user_id,               -- 1
+            original_filename,     -- 2
+            filename,              -- 3
+            filepath,              -- 4
+            filesize,              -- 5
+            filetype,              -- 6
+            filehash,              -- 7
+            filetag,               -- 8
+            filedescription,       -- 9
+            processed              -- 10
+        ) VALUES (
+            ?,                     -- 1
+            ?,                     -- 2
+            ?,                     -- 3
+            ?,                     -- 4
+            ?,                     -- 5
+            ?,                     -- 6
+            ?,                     -- 7
+            ?,                     -- 8
+            ?,                     -- 9
+            ?                      -- 10
+        )
+        RETURNING
+            id,                    -- 1
+            user_id,               -- 2
+            original_filename,     -- 3
+            filename,              -- 4
+            filepath,              -- 5
+            filesize,              -- 6
+            filetype,              -- 7
+            filehash,              -- 8
+            filetag,               -- 9
+            filedescription,       -- 10
+            processed,             -- 11
+            created_at,            -- 12
+            updated_at;` // 13
+
+	var savedFile File
+	err := s.QueryRowRW(
+		sqlInsert,
+		f.UserID,           // 1
+		f.OriginalFilename, // 2
+		f.Filename,         // 3
+		f.Filepath,         // 4
+		f.Filesize,         // 5
+		f.Filetype,         // 6
+		f.Filehash,         // 7
+		f.Filetag,          // 8
+		f.Filedescription,  // 9
+		f.Processed,        // 10
+	).Scan(
+		&savedFile.ID,               // 1
+		&savedFile.UserID,           // 2
+		&savedFile.OriginalFilename, // 3
+		&savedFile.Filename,         // 4
+		&savedFile.Filepath,         // 5
+		&savedFile.Filesize,         // 6
+		&savedFile.Filetype,         // 7
+		&savedFile.Filehash,         // 8
+		&savedFile.Filetag,          // 9
+		&savedFile.Filedescription,  // 10
+		&savedFile.Processed,        // 11
+		&savedFile.CreatedAt,        // 12
+		&savedFile.UpdatedAt,        // 13
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &savedFile, nil
+}
+
+func (s *SQLite) GetFileByUserIDAndFilename(userID int64, filename string) (*File, error) {
+	const sqlSelect = `SELECT
+            id,                    -- 1
+            user_id,               -- 2
+            original_filename,     -- 3
+            filename,              -- 4
+            filepath,              -- 5
+            filesize,              -- 6
+            filetype,              -- 7
+            filehash,              -- 8
+            filetag,               -- 9
+            filedescription,       -- 10
+            processed,             -- 11
+            created_at,            -- 12
+            updated_at             -- 13
+        FROM filemanager_files
+        WHERE user_id = ?     -- 1
+        AND filename = ?      -- 2
+        LIMIT 1;`
+
+	var f File
+	err := s.QueryRow(
+		sqlSelect,
+		userID,   // 1
+		filename, // 2
+	).Scan(
+		&f.ID,               // 1
+		&f.UserID,           // 2
+		&f.OriginalFilename, // 3
+		&f.Filename,         // 4
+		&f.Filepath,         // 5
+		&f.Filesize,         // 6
+		&f.Filetype,         // 7
+		&f.Filehash,         // 8
+		&f.Filetag,          // 9
+		&f.Filedescription,  // 10
+		&f.Processed,        // 11
+		&f.CreatedAt,        // 12
+		&f.UpdatedAt,        // 13
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil // File not found
+		}
+		return nil, err
+	}
+
+	return &f, nil
+}
+
+func (s *SQLite) GetFileByUserReferenceIDAndFilename(
+	userRefID string,
+	filename string,
+) (*File, error) {
+	const sqlSelect = `SELECT
+            f.id,                    -- 1
+            f.user_id,               -- 2
+            f.original_filename,     -- 3
+            f.filename,              -- 4
+            f.filepath,              -- 5
+            f.filesize,              -- 6
+            f.filetype,              -- 7
+            f.filehash,              -- 8
+            f.filetag,               -- 9
+            f.filedescription,       -- 10
+            f.processed,             -- 11
+            f.created_at,            -- 12
+            f.updated_at             -- 13
+        FROM filemanager_files f
+        JOIN users u ON f.user_id = u.id
+        WHERE u.reference_id = ?  -- 1
+        AND f.filename = ?        -- 2
+        LIMIT 1;`
+
+	var f File
+	err := s.QueryRow(
+		sqlSelect,
+		userRefID, // 1
+		filename,  // 2
+	).Scan(
+		&f.ID,               // 1
+		&f.UserID,           // 2
+		&f.OriginalFilename, // 3
+		&f.Filename,         // 4
+		&f.Filepath,         // 5
+		&f.Filesize,         // 6
+		&f.Filetype,         // 7
+		&f.Filehash,         // 8
+		&f.Filetag,          // 9
+		&f.Filedescription,  // 10
+		&f.Processed,        // 11
+		&f.CreatedAt,        // 12
+		&f.UpdatedAt,        // 13
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil // File not found
+		}
+		return nil, err
+	}
+
+	return &f, nil
 }

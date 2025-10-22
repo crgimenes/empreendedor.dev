@@ -1,9 +1,8 @@
 package filemanager
 
 import (
-	"edev/config"
-	"edev/user"
 	"errors"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -12,23 +11,25 @@ import (
 	"slices"
 	"strings"
 
+	"edev/config"
+	"edev/db"
 	"edev/log"
+	"edev/utils"
 )
 
-type File struct {
-	ID               int64
-	UserID           int64
-	OriginalFilename string
-	Filename         string
-	Filepath         string
-	Filesize         int64
-	Filetype         string
-	Filehash         string
-	Filetag          string
-	Filedescription  string
-	Processed        bool
-	CreatedAt        string
-	UpdatedAt        string
+func SaveFileMetadata(f *db.File) (*db.File, error) {
+	return db.Storage.SaveFileMetadata(f)
+}
+
+func GetFileByUserIDAndFilename(userID int64, filename string) (*db.File, error) {
+	return db.Storage.GetFileByUserIDAndFilename(userID, filename)
+}
+
+func GetFileByUserReferenceIDAndFilename(
+	userRefID string,
+	filename string,
+) (*db.File, error) {
+	return db.Storage.GetFileByUserReferenceIDAndFilename(userRefID, filename)
 }
 
 // ensureDir creates the given directory path if it does not exist.
@@ -48,7 +49,7 @@ func ensureDir(path string) (string, error) {
 	}
 
 	if os.IsNotExist(err) {
-		err = os.MkdirAll(absPath, 0o755)
+		err = os.MkdirAll(absPath, 0o700)
 		if err != nil {
 			return "", err
 		}
@@ -60,7 +61,7 @@ func ensureDir(path string) (string, error) {
 
 // UploadPath returns the upload directory path for the given user.
 // It ensures that the directory exists, creating it if necessary.
-func UploadPath(u user.User) (string, error) {
+func UploadPath(u db.User) (string, error) {
 	wd := config.Cfg.UploadPath
 
 	path := filepath.Join(
@@ -196,4 +197,47 @@ func ValidateFile(
 	}
 
 	return typeDetected, size, nil
+}
+
+// DataFilePath returns the directory path for storing processed data files for a given user.
+// It ensures that the directory exists, creating it if necessary.
+func DataFilePath(u *db.User) (string, error) {
+	if u == nil || u.ReferenceID == "" {
+		return "", errors.New("user reference ID is required")
+	}
+	wd := config.Cfg.DataPath
+
+	// absolute path
+	if strings.HasPrefix(wd, "./") {
+		absWd, err := filepath.Abs(wd)
+		if err != nil {
+			return "", err
+		}
+		wd = absWd
+	}
+
+	// shardes by first 2 letter of user reference ID
+	s1 := fmt.Sprintf("%c%c", u.ReferenceID[0], u.ReferenceID[1])
+	s2 := fmt.Sprintf("%c%c", u.ReferenceID[2], u.ReferenceID[3])
+
+	path := filepath.Join(
+		wd,
+		"uploads",
+		"users",
+		s1,
+		s2,
+		u.ReferenceID,
+	)
+
+	absPath, err := ensureDir(path)
+	if err != nil {
+		return "", err
+	}
+
+	return absPath, nil
+}
+
+// FileName generates random file name
+func FileName() string {
+	return utils.NewOpaqueIDShort()
 }
