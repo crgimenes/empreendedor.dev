@@ -39,6 +39,6 @@ empreendedor.dev-linux-amd64
 
 *.db*
 *.gob
-
+data/*
 nonfree
 
