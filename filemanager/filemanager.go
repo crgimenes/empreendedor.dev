@@ -161,6 +161,8 @@ func ValidateFile(
 		return "", 0, ErrorFileExtension
 	}
 
+	// TODO: Implement disk quota per user
+
 	// Check size bounds
 	size = fh.Size
 	if size > maxSize {

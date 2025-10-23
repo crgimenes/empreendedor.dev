@@ -463,6 +463,8 @@ func meHandler(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
+			// TODO: use filehash to avoid duplicate uploads (duoplicate metadata entries but same file on disk)
+
 			// Get user uploads directory
 			uploadsDir, err := filemanager.DataFilePath(u)
 			if err != nil {
@@ -497,7 +499,7 @@ func meHandler(w http.ResponseWriter, r *http.Request) {
 				UserID:           u.ID,
 				OriginalFilename: fh.Filename,
 				Filename:         filepath.Base(avatarPath),
-				Filepath:         avatarPath,
+				Filepath:         avatarPath, // real path on disk
 				Filesize:         size,
 				Filetype:         typeDetected,
 				Filehash:         fileHash,
@@ -515,7 +517,7 @@ func meHandler(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			avatarURL = "/file/" + fileMeta.Filename
+			avatarURL = "/file/" + u.ReferenceID + "/" + fileMeta.Filename
 			log.Printf("avatar file saved: %s", avatarURL)
 		}
 
@@ -577,22 +579,34 @@ func fileHandler(w http.ResponseWriter, r *http.Request) {
 		return // prelude already handled redirect
 	}
 
-	filename := strings.TrimPrefix(r.URL.Path, config.Cfg.BaseURL+"/file/")
-	filename = strings.TrimPrefix(filename, "/file/")
-	if filename == "" {
-		http.Error(w, "filename is required", http.StatusBadRequest)
+	log.Printf("serving file %q for user %s", r.URL.Path, u.Email)
+
+	path := strings.TrimPrefix(r.URL.Path, config.Cfg.BaseURL+"/file/")
+	path = strings.TrimPrefix(path, "/file/")
+	if path == "" {
+		http.Error(w, "path is required", http.StatusBadRequest)
 		return
 	}
 
-	fileMeta, err := filemanager.GetFileByUserIDAndFilename(u.ID, filename)
+	parts := strings.SplitN(path, "/", 2)
+	if len(parts) != 2 {
+		http.Error(w, "invalid file path", http.StatusBadRequest)
+		return
+	}
+
+	userRefID := parts[0]
+	filename := parts[1]
+
+	fileMeta, err := filemanager.GetFileByUserReferenceIDAndFilename(userRefID, filename)
 	if err != nil {
 		log.Printf("error getting file metadata: %v", err)
 		http.Error(w, "file not found", http.StatusNotFound)
 		return
 	}
 
-	http.ServeFile(w, r, fileMeta.Filepath)
+	// TODO: implement cache validation using ETag and Last-Modified headers based on fileMeta.Filehash
 
+	http.ServeFile(w, r, fileMeta.Filepath)
 }
 
 func linkHandler(w http.ResponseWriter, r *http.Request) {
