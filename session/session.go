@@ -1,24 +1,23 @@
 package session
 
 /*
-In-memory session store (opaque SID -> user.User).
+In-memory session store (opaque SID -> db.User).
 */
 
 import (
 	"bytes"
+	"edev/db"
 	"encoding/gob"
 	"log"
 	"net/http"
 	"os"
 	"sync"
 	"time"
-
-	"edev/user"
 )
 
 type session struct {
-	User      user.User `json:"user"`
-	ExpiresAt int64     `json:"expires_at"`
+	User      db.User `json:"user"`
+	ExpiresAt int64   `json:"expires_at"`
 }
 
 var (
@@ -107,7 +106,7 @@ func Count() int {
 	return n
 }
 
-func Put(sid string, u user.User) {
+func Put(sid string, u db.User) {
 	s := session{
 		User:      u,
 		ExpiresAt: time.Now().Unix() + MaxSessionAge,
@@ -117,7 +116,7 @@ func Put(sid string, u user.User) {
 	sessions.Unlock()
 }
 
-func Get(sid string) (user.User, bool) {
+func Get(sid string) (db.User, bool) {
 	sessions.RLock()
 	s, ok := sessions.m[sid]
 	sessions.RUnlock()

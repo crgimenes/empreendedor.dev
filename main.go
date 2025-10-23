@@ -16,13 +16,13 @@ import (
 	"edev/assets"
 	"edev/config"
 	"edev/db"
+	"edev/filemanager"
 	"edev/log"
 	"edev/lua"
 	"edev/mail"
 	"edev/migration"
 	"edev/session"
 	"edev/templates"
-	"edev/user"
 	"edev/utils"
 )
 
@@ -83,7 +83,7 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sid, ok := session.GetCookie(r)
-	u := user.User{}
+	u := db.User{}
 	authed := false
 	if ok {
 		if got, ok := session.Get(sid); ok {
@@ -96,7 +96,7 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 
 	data := struct {
 		Authed  bool
-		User    user.User
+		User    db.User
 		Error   string
 		Message string
 		Config  config.Config
@@ -115,7 +115,6 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func loginPageHandler(w http.ResponseWriter, r *http.Request) {
-	// prelude
 	_, _, _, err := prelude(w, r,
 		[]string{
 			http.MethodGet,
@@ -140,13 +139,13 @@ func loginPageHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	var u user.User
+	var u db.User
 	authed := false
 	u, authed = session.Get(sid)
 
 	data := struct {
 		Authed  bool
-		User    user.User
+		User    db.User
 		Error   string
 		Message string
 		Config  config.Config
@@ -304,12 +303,12 @@ func prelude(
 	chkRatelimit bool,
 	preventCache bool,
 ) (
-	*user.User,
+	*db.User,
 	string, // session id
 	bool, // authenticated
 	error) {
 	if preventCache {
-		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Cache-Control", "private, no-cache")
 	}
 
 	if len(allowedMethods) > 0 {
@@ -328,6 +327,22 @@ func prelude(
 		// not implemented yet
 	}
 
+	ref := r.Referer()
+	log.Printf("referer: %s", ref)
+
+	/*
+		// check referer
+		// TODO: mote to use in file sharing links
+		urlBase := strings.TrimPrefix(config.Cfg.BaseURL, "https://")
+		urlBase = strings.TrimPrefix(urlBase, "http://")
+		if ref != "" && !strings.Contains(ref, urlBase) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			log.Printf("forbidden referer: %s", ref)
+			return nil, "", false, nil
+		}
+	*/
+
+	// check session
 	sid, ok := session.GetCookie(r)
 	if !ok {
 		http.Redirect(w, r, config.Cfg.BaseURL+"/login", http.StatusFound)
@@ -367,7 +382,7 @@ func meHandler(w http.ResponseWriter, r *http.Request) {
 		// Show profile form
 		data := struct {
 			Authed  bool
-			User    user.User
+			User    db.User
 			Error   string
 			Message string
 			Config  config.Config
@@ -386,7 +401,7 @@ func meHandler(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method == "POST" {
 		// Process profile update
-		err := r.ParseForm()
+		err := r.ParseMultipartForm(10 << 20) // 10 MB
 		if err != nil {
 			http.Error(w, "bad request", http.StatusBadRequest)
 			return
@@ -395,6 +410,129 @@ func meHandler(w http.ResponseWriter, r *http.Request) {
 		username := r.FormValue("username")
 		avatarURL := r.FormValue("avatar_url")
 
+		/// get files from form
+		file, fh, err := r.FormFile("avatar_file")
+		if err != nil && err != http.ErrMissingFile {
+			log.Printf("error getting avatar file from form: %v", err)
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		defer func() {
+			if file != nil {
+				file.Close()
+			}
+		}()
+
+		/*
+		   // ValidateFile performs comprehensive validation on an uploaded multipart file.
+		   // It checks the file name for length and invalid characters, validates the file extension
+		   // against a whitelist, ensures the file size doesn't exceed the maximum limit, and
+		   // verifies the MIME type by reading the file content.
+		   //
+		   // Parameters:
+		   //   - file: The multipart.File to validate
+		   //   - fh: The multipart.FileHeader containing file metadata
+		   //   - acceptedTypes: Slice of accepted MIME types (e.g., "image/jpeg", "text/plain")
+		   //   - acceptedExtensions: Slice of accepted file extensions without dots (e.g., "jpg", "txt")
+		   //   - maxSize: Maximum allowed file size in bytes
+		   //
+		   // Returns:
+		   //   - typeDetected: The detected MIME type of the file
+		   //   - size: The size of the file in bytes
+		   //   - err: Error if validation fails, nil if successful
+		   //
+		   // The function will return specific errors for different validation failures:
+		   //   - ErrorFileNameInvalid: File name is too long (>255 chars) or contains invalid characters
+		   //   - ErrorFileExtension: File extension is not in the accepted list
+		   //   - ErrorFileTooLarge: File size exceeds the maximum limit
+		   //   - ErrorFileRead: Error occurred while reading the file
+		   //   - ErrorInvalidFileType: Detected MIME type is not in the accepted list
+		   //
+		   // Note: The function reads the first 512 bytes of the file for MIME type detection
+		   // and resets the file pointer to the beginning after reading.
+		   func ValidateFile(
+		   	file multipart.File,
+		   	fh *multipart.FileHeader,
+		   	acceptedTypes []string, // accepted MIME types
+		   	acceptedExtensions []string, // accepted file extensions
+		   	maxSize int64, // max file size in bytes
+		   ) (typeDetected string, size int64, err error) {
+
+		*/
+
+		if file != nil {
+			log.Printf("uploaded avatar file: %v", fh.Filename)
+
+			typeDetected, size, err := filemanager.ValidateFile(
+				file,
+				fh,
+				[]string{"image/jpeg", "image/png", "image/gif", "image/webp"},
+				[]string{"jpg", "jpeg", "png", "gif", "webp"},
+				5<<20, // 5 MB
+			)
+			if err != nil {
+				// TODO: Return error as form error message using alert message from Bootstrap
+				//   - ErrorFileNameInvalid: File name is too long (>255 chars) or contains invalid characters
+				//   - ErrorFileExtension: File extension is not in the accepted list
+				//   - ErrorFileTooLarge: File size exceeds the maximum limit
+				//   - ErrorFileRead: Error occurred while reading the file
+				//   - ErrorInvalidFileType: Detected MIME type is not in the accepted list
+				//
+				log.Printf("avatar file validation error: %v", err)
+				http.Error(w, "invalid avatar file: "+err.Error(), http.StatusBadRequest)
+				return
+			}
+
+			log.Printf("avatar file validated: name %q type=%q, size=%d",
+				fh.Filename,
+				typeDetected,
+				size)
+
+			// process uploaded file
+			log.Printf("processing uploaded avatar file: %v", fh.Filename)
+			// For simplicity, we just read the file and simulate uploading it
+			// In a real application, you would store it in a storage service
+			avatarData := make([]byte, fh.Size)
+			_, err = file.Read(avatarData)
+			if err != nil {
+				log.Printf("error reading uploaded avatar file: %v", err)
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+				return
+			}
+
+			uploadsDir, err := filemanager.DataFilePath(u)
+			if err != nil {
+				log.Printf("error getting user data file path: %v", err)
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+				return
+			}
+
+			// TODO: save file in temp dir and convert/resize to standard sizes and formats
+
+			fileExt := strings.ToLower(filepath.Ext(fh.Filename))
+			avatarPath := filepath.Join(uploadsDir, filemanager.FileName()+fileExt)
+
+			log.Printf("saving uploaded avatar file to: %q", avatarPath)
+
+			err = os.WriteFile(avatarPath, avatarData, 0600)
+			if err != nil {
+				log.Printf("error saving uploaded avatar file: %v", err)
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+				return
+			}
+
+			///////////////////////////////////////////////////////////
+			///////////////////////////////////////////////////////////
+			///////////////////////////////////////////////////////////
+			// TODO: save file on database
+			///////////////////////////////////////////////////////////
+			///////////////////////////////////////////////////////////
+			///////////////////////////////////////////////////////////
+
+			avatarURL = config.Cfg.BaseURL + "/" + avatarPath
+			log.Printf("avatar file saved: %s", avatarURL)
+		}
+
 		// Update user profile
 		updatedUser, err := db.Storage.UpdateUserProfile(u.ID, username, avatarURL)
 		if err != nil {
@@ -402,7 +540,7 @@ func meHandler(w http.ResponseWriter, r *http.Request) {
 			// Re-render form with error
 			data := struct {
 				Authed  bool
-				User    user.User
+				User    db.User
 				Error   string
 				Message string
 				Config  config.Config
@@ -627,8 +765,12 @@ func main() {
 	}
 
 	mux.HandleFunc("/logout", logoutHandler)
-	mux.HandleFunc("/me", meHandler)
+	mux.HandleFunc("/me", meHandler) // user profile
 
+	// filemanager routes (user files, images, etc.)
+	//mux.HandleFunc("/files/", filesHandler)
+
+	// ------------------------------------------
 	srv := &http.Server{
 		Addr:              config.Cfg.Addrs,
 		Handler:           securityHeaders(mux),

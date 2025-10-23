@@ -39,6 +39,10 @@ func NewOpaqueID() string {
 	return b64urlNoPad(randBytes(32))
 }
 
+func NewOpaqueIDShort() string {
+	return b64urlNoPad(randBytes(16))
+}
+
 func RandomString(n int) string {
 	const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	b := make([]byte, n)

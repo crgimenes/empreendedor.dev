@@ -36,7 +36,12 @@
                             </div>
                         {{end}}
 
-                        <form method="POST" action="/me" class="needs-validation">
+                        <form method="POST" 
+                            action="/me" 
+                            class="needs-validation"
+                            enctype="multipart/form-data"
+                            novalidate>
+
                             <!-- Email (read-only) -->
                             <div class="mb-3">
                                 <label for="email" class="form-label">Email</label>
@@ -73,6 +78,16 @@
                                     <img src="{{.User.AvatarURL}}" alt="Avatar do usuario" 
                                         class="img-thumbnail mt-2" style="max-width: 100px;">
                                 {{end}}
+                            </div>
+
+                            <!-- File Upload -->
+                            <div class="mb-3">
+                                <label for="avatar_file" class="form-label">Upload do Avatar</label>
+                                <input class="form-control" 
+                                        type="file" 
+                                        id="avatar_file"
+                                        name="avatar_file"
+                                        accept="image/*">
                             </div>
 
                             <!-- Buttons -->

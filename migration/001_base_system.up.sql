@@ -76,4 +76,30 @@ CREATE TABLE IF NOT EXISTS magic_token (
     expires_at DATETIME NOT NULL DEFAULT (DATETIME('now', '+3 hour'))
 );
 
+--
+
+CREATE TABLE IF NOT EXISTS filemanager_files (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, -- owner of the file
+    original_filename TEXT NOT NULL,
+    filename TEXT NOT NULL UNIQUE,
+    filepath TEXT NOT NULL,
+    filesize INTEGER NOT NULL, -- in bytes
+    filetype TEXT,
+    filehash TEXT, -- e.g. SHA256 hash of the file
+    filetag TEXT, -- e.g. category or tag for the file (user_avatar, document, etc.)
+    filedescription TEXT,
+    processed INTEGER NOT NULL DEFAULT 0 CHECK (processed IN (0,1)),
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_filemanager_files_user_id ON filemanager_files(user_id);
+
+CREATE TRIGGER IF NOT EXISTS filemanager_files_set_updated_at
+AFTER UPDATE OF original_filename, filename, filepath, filesize, filetype, filehash, filetag, filedescription, processed ON filemanager_files
+BEGIN
+    UPDATE filemanager_files SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
+END;
+
 

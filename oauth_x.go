@@ -155,7 +155,7 @@ func (p XProvider) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 		/*
 			// TODO: find user in X provider and if not found create it
 
-			session.Put(sid, user.User{
+			session.Put(sid, db.User{
 				ID:        xuLegacy.ID,
 				Login:     xuLegacy.ScreenName,
 				Name:      xuLegacy.Name,

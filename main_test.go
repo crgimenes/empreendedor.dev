@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"edev/config"
+	"edev/db"
 	"edev/session"
-	"edev/user"
 	"edev/utils"
 )
 
@@ -67,7 +67,7 @@ func TestIndexHandlerNotAuthenticated(t *testing.T) {
 // TestIndexHandlerAuthenticated tests the index page for authenticated users
 func TestIndexHandlerAuthenticated(t *testing.T) {
 	// Create a test user and session
-	testUser := user.User{
+	testUser := db.User{
 		ID:        1,
 		Username:  "testuser",
 		Email:     "test@example.com",
@@ -121,7 +121,7 @@ func TestLoginPageHandler(t *testing.T) {
 
 // TestLoginPageHandlerRedirectIfAuthenticated tests that authenticated users are redirected
 func TestLoginPageHandlerRedirectIfAuthenticated(t *testing.T) {
-	testUser := user.User{
+	testUser := db.User{
 		ID:       1,
 		Username: "testuser",
 		Email:    "test@example.com",
@@ -166,7 +166,7 @@ func TestMeHandlerNotAuthenticated(t *testing.T) {
 
 // TestMeHandlerGETAuthenticated tests GET /me for authenticated users
 func TestMeHandlerGETAuthenticated(t *testing.T) {
-	testUser := user.User{
+	testUser := db.User{
 		ID:        1,
 		Username:  "testuser",
 		Email:     "test@example.com",
@@ -197,7 +197,7 @@ func TestMeHandlerGETAuthenticated(t *testing.T) {
 
 // TestLogoutHandler tests the logout handler
 func TestLogoutHandler(t *testing.T) {
-	testUser := user.User{
+	testUser := db.User{
 		ID:       1,
 		Username: "testuser",
 		Email:    "test@example.com",
