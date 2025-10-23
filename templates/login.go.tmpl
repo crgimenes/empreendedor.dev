@@ -17,6 +17,11 @@
                         <!-- OAuth Providers -->
                         <div class="mb-4">
                             <h6 class="card-subtitle mb-3">Conectar com:</h6>
+                            {{if .Config.DiscordOAuthEnabled}}
+                                <a href="/login/discord" class="btn btn-primary w-100 mb-2" rel="nofollow">
+                                    <i class="bi bi-discord"></i> Discord
+                                </a>
+                            {{end}}
                             {{if .Config.GithubOAuthEnabled}}
                                 <a href="/login/github" class="btn btn-light w-100 mb-2" rel="nofollow">
                                     <i class="bi bi-github"></i> GitHub

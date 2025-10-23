@@ -209,6 +209,10 @@ func runLuaFile(name string) {
 	L.SetGlobal("BaseURL", ifEmpty(os.Getenv("BASE_URL"), config.Cfg.BaseURL))
 	L.SetGlobal("Address", ifEmpty(os.Getenv("ADDRESS"), config.Cfg.Addrs))
 
+	L.SetGlobal("DiscordOAuthEnabled", os.Getenv("DISCORD_OAUTH_ENABLED") == "true")
+	L.SetGlobal("DiscordClientID", os.Getenv("DISCORD_CLIENT_ID"))
+	L.SetGlobal("DiscordClientSecret", os.Getenv("DISCORD_CLIENT_SECRET"))
+
 	L.SetGlobal("GithubOAuthEnabled", os.Getenv("GITHUB_OAUTH_ENABLED") == "true")
 	L.SetGlobal("GitHubClientID", os.Getenv("GITHUB_CLIENT_ID"))
 	L.SetGlobal("GitHubClientSecret", os.Getenv("GITHUB_CLIENT_SECRET"))
@@ -245,6 +249,10 @@ func runLuaFile(name string) {
 	config.Cfg.Addrs = L.MustGetString("Address")
 	config.Cfg.BaseURL = L.MustGetString("BaseURL")
 	config.Cfg.FakeOAuthEnabled = L.MustGetBool("FakeOAuthEnabled")
+
+	config.Cfg.DiscordOAuthEnabled = L.MustGetBool("DiscordOAuthEnabled")
+	config.Cfg.DiscordClientID = L.MustGetString("DiscordClientID")
+	config.Cfg.DiscordClientSecret = L.MustGetString("DiscordClientSecret")
 
 	config.Cfg.GithubOAuthEnabled = L.MustGetBool("GithubOAuthEnabled")
 	config.Cfg.GitHubClientID = L.MustGetString("GitHubClientID")
@@ -295,9 +303,10 @@ func takeState(st string) (string, bool) {
 
 // OAuth provider instances (defined in separate files)
 var (
-	gitHubProvider = GitHubProvider{}
-	xProvider      = XProvider{}
-	fakeProvider   = FakeProvider{}
+	gitHubProvider  = GitHubProvider{}
+	discordProvider = DiscordProvider{}
+	xProvider       = XProvider{}
+	fakeProvider    = FakeProvider{}
 )
 
 func logoutHandler(w http.ResponseWriter, r *http.Request) {
@@ -824,6 +833,11 @@ func main() {
 
 	mux.HandleFunc("/healthz", healthHandler)
 	mux.HandleFunc("GET /link/{token}", linkHandler) // for email link login and magic link
+
+	if config.Cfg.DiscordOAuthEnabled {
+		mux.HandleFunc("/login/discord", discordProvider.LoginHandler)
+		mux.HandleFunc("/discord/oauth/callback", discordProvider.CallbackHandler)
+	}
 
 	if config.Cfg.GithubOAuthEnabled {
 		mux.HandleFunc("/login/github", gitHubProvider.LoginHandler)

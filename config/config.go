@@ -3,24 +3,27 @@ package config
 import "time"
 
 type Config struct {
-	Addrs              string
-	BaseURL            string
-	DBFile             string
-	FakeOAuthBaseURL   string
-	FakeOAuthClientID  string
-	FakeOAuthEnabled   bool
-	FakeOAuthRedirect  string
-	GitHubClientID     string
-	GitHubClientSecret string
-	GitTag             string
-	GithubOAuthEnabled bool
-	ResendAPIKey       string
-	XClientID          string
-	XClientSecret      string
-	XOAuthEnabled      bool
-	SessionDuration    time.Duration
-	UploadPath         string // file upload storage path (temporary before processing)
-	DataPath           string //  procesed files storage path
+	Addrs               string
+	BaseURL             string
+	DBFile              string
+	DataPath            string //  procesed files storage path
+	DiscordClientID     string
+	DiscordClientSecret string
+	DiscordOAuthEnabled bool
+	FakeOAuthBaseURL    string
+	FakeOAuthClientID   string
+	FakeOAuthEnabled    bool
+	FakeOAuthRedirect   string
+	GitHubClientID      string
+	GitHubClientSecret  string
+	GitTag              string
+	GithubOAuthEnabled  bool
+	ResendAPIKey        string
+	SessionDuration     time.Duration
+	UploadPath          string // file upload storage path (temporary before processing)
+	XClientID           string
+	XClientSecret       string
+	XOAuthEnabled       bool
 }
 
 var Cfg = &Config{
