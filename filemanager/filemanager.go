@@ -1,6 +1,8 @@
 package filemanager
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -240,4 +242,24 @@ func DataFilePath(u *db.User) (string, error) {
 // FileName generates random file name
 func FileName() string {
 	return utils.NewOpaqueIDShort()
+}
+
+// FileHash computes the SHA-256 hash of the given multipart file.
+// It reads the file content and returns the hexadecimal representation of the hash.
+func FileHash(file multipart.File) (string, error) {
+	_, err := file.Seek(0, io.SeekStart) // reset position
+	if err != nil {
+		return "", err
+	}
+
+	hash := sha256.New()
+
+	// Copy file content directly to the hasher
+	_, err = io.Copy(hash, file)
+	if err != nil {
+		return "", err
+	}
+
+	sum := hash.Sum(nil)
+	return hex.EncodeToString(sum), nil
 }

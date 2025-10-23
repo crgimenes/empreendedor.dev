@@ -328,7 +328,7 @@ func prelude(
 	}
 
 	ref := r.Referer()
-	log.Printf("referer: %s", ref)
+	log.Printf("referer: %q", ref)
 
 	/*
 		// check referer
@@ -423,43 +423,6 @@ func meHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}()
 
-		/*
-		   // ValidateFile performs comprehensive validation on an uploaded multipart file.
-		   // It checks the file name for length and invalid characters, validates the file extension
-		   // against a whitelist, ensures the file size doesn't exceed the maximum limit, and
-		   // verifies the MIME type by reading the file content.
-		   //
-		   // Parameters:
-		   //   - file: The multipart.File to validate
-		   //   - fh: The multipart.FileHeader containing file metadata
-		   //   - acceptedTypes: Slice of accepted MIME types (e.g., "image/jpeg", "text/plain")
-		   //   - acceptedExtensions: Slice of accepted file extensions without dots (e.g., "jpg", "txt")
-		   //   - maxSize: Maximum allowed file size in bytes
-		   //
-		   // Returns:
-		   //   - typeDetected: The detected MIME type of the file
-		   //   - size: The size of the file in bytes
-		   //   - err: Error if validation fails, nil if successful
-		   //
-		   // The function will return specific errors for different validation failures:
-		   //   - ErrorFileNameInvalid: File name is too long (>255 chars) or contains invalid characters
-		   //   - ErrorFileExtension: File extension is not in the accepted list
-		   //   - ErrorFileTooLarge: File size exceeds the maximum limit
-		   //   - ErrorFileRead: Error occurred while reading the file
-		   //   - ErrorInvalidFileType: Detected MIME type is not in the accepted list
-		   //
-		   // Note: The function reads the first 512 bytes of the file for MIME type detection
-		   // and resets the file pointer to the beginning after reading.
-		   func ValidateFile(
-		   	file multipart.File,
-		   	fh *multipart.FileHeader,
-		   	acceptedTypes []string, // accepted MIME types
-		   	acceptedExtensions []string, // accepted file extensions
-		   	maxSize int64, // max file size in bytes
-		   ) (typeDetected string, size int64, err error) {
-
-		*/
-
 		if file != nil {
 			log.Printf("uploaded avatar file: %v", fh.Filename)
 
@@ -500,6 +463,7 @@ func meHandler(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
+			// Get user uploads directory
 			uploadsDir, err := filemanager.DataFilePath(u)
 			if err != nil {
 				log.Printf("error getting user data file path: %v", err)
@@ -514,6 +478,7 @@ func meHandler(w http.ResponseWriter, r *http.Request) {
 
 			log.Printf("saving uploaded avatar file to: %q", avatarPath)
 
+			// Save file to disk in the user's upload directory
 			err = os.WriteFile(avatarPath, avatarData, 0600)
 			if err != nil {
 				log.Printf("error saving uploaded avatar file: %v", err)
@@ -521,15 +486,36 @@ func meHandler(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			///////////////////////////////////////////////////////////
-			///////////////////////////////////////////////////////////
-			///////////////////////////////////////////////////////////
-			// TODO: save file on database
-			///////////////////////////////////////////////////////////
-			///////////////////////////////////////////////////////////
-			///////////////////////////////////////////////////////////
+			fileHash, err := filemanager.FileHash(file)
+			if err != nil {
+				log.Printf("error calculating file hash: %v", err)
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+				return
+			}
 
-			avatarURL = config.Cfg.BaseURL + "/" + avatarPath
+			fileMeta := &db.File{
+				UserID:           u.ID,
+				OriginalFilename: fh.Filename,
+				Filename:         filepath.Base(avatarPath),
+				Filepath:         avatarPath,
+				Filesize:         size,
+				Filetype:         typeDetected,
+				Filehash:         fileHash,
+				Filetag:          "avatar",
+				Filedescription:  "User avatar image",
+				Processed:        false,
+				CreatedAt:        time.Now().UTC().Format(time.RFC3339),
+				UpdatedAt:        time.Now().UTC().Format(time.RFC3339),
+			}
+
+			fileMeta, err = filemanager.SaveFileMetadata(fileMeta)
+			if err != nil {
+				log.Printf("error saving file metadata: %v", err)
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+				return
+			}
+
+			avatarURL = "/file/" + fileMeta.Filename
 			log.Printf("avatar file saved: %s", avatarURL)
 		}
 
@@ -570,7 +556,46 @@ func meHandler(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 }
 
-func handlerLink(w http.ResponseWriter, r *http.Request) {
+// serve user files
+func fileHandler(w http.ResponseWriter, r *http.Request) {
+
+	u, _, authed, err := prelude(w, r,
+		[]string{
+			http.MethodGet,
+		},
+		true,  // check auth
+		false, // check ratelimit
+		false, // prevent cache
+	)
+	if err != nil {
+		log.Printf("prelude error: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	if !authed {
+		return // prelude already handled redirect
+	}
+
+	filename := strings.TrimPrefix(r.URL.Path, config.Cfg.BaseURL+"/file/")
+	filename = strings.TrimPrefix(filename, "/file/")
+	if filename == "" {
+		http.Error(w, "filename is required", http.StatusBadRequest)
+		return
+	}
+
+	fileMeta, err := filemanager.GetFileByUserIDAndFilename(u.ID, filename)
+	if err != nil {
+		log.Printf("error getting file metadata: %v", err)
+		http.Error(w, "file not found", http.StatusNotFound)
+		return
+	}
+
+	http.ServeFile(w, r, fileMeta.Filepath)
+
+}
+
+func linkHandler(w http.ResponseWriter, r *http.Request) {
 	u, _, _, err := prelude(w, r,
 		[]string{
 			http.MethodGet,
@@ -747,7 +772,7 @@ func main() {
 	mux.HandleFunc("POST /login/magic_link", handlerLoginMagic) // for email link login and magic link
 
 	mux.HandleFunc("/healthz", healthHandler)
-	mux.HandleFunc("GET /link/{token}", handlerLink) // for email link login and magic link
+	mux.HandleFunc("GET /link/{token}", linkHandler) // for email link login and magic link
 
 	if config.Cfg.GithubOAuthEnabled {
 		mux.HandleFunc("/login/github", gitHubProvider.LoginHandler)
@@ -768,7 +793,7 @@ func main() {
 	mux.HandleFunc("/me", meHandler) // user profile
 
 	// filemanager routes (user files, images, etc.)
-	//mux.HandleFunc("/files/", filesHandler)
+	mux.HandleFunc("/file/", fileHandler)
 
 	// ------------------------------------------
 	srv := &http.Server{
