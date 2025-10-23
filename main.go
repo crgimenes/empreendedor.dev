@@ -42,6 +42,10 @@ var (
 func securityHeaders(next http.Handler) http.Handler {
 	csp := strings.Join([]string{
 		"default-src 'self'",
+		"form-action 'self'",
+		"object-src 'none'",
+		"script-src 'self'",
+		"style-src 'self' 'unsafe-inline'",
 		"img-src 'self' data: https: *.githubusercontent.com github.com *.twimg.com pbs.twimg.com",
 		"style-src 'self' 'unsafe-inline'",
 		"frame-ancestors 'none'",
@@ -50,8 +54,12 @@ func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
-		w.Header().Set("Referrer-Policy", "no-referrer")
+		//w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		w.Header().Set("Content-Security-Policy", csp)
+
+		w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload")
+		w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
 
 		next.ServeHTTP(w, r)
 	})
@@ -91,8 +99,14 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// TODO: get message from session flash messages
 	// Check for message in query parameter
 	message := r.URL.Query().Get("message")
+	if len(message) > 200 {
+		log.Printf("message too long, truncating")
+		http.Error(w, "message too long", http.StatusBadRequest)
+		return
+	}
 
 	data := struct {
 		Authed  bool
@@ -329,6 +343,8 @@ func prelude(
 
 	ref := r.Referer()
 	log.Printf("referer: %q", ref)
+	origin := r.Header.Get("Origin")
+	log.Printf("origin: %q", origin)
 
 	/*
 		// check referer
@@ -407,7 +423,7 @@ func meHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		username := r.FormValue("username")
+		username := r.FormValue("username") // TODO: Prevent username format abuse
 		//avatarURL := r.FormValue("avatar_url")
 		avatarURL := u.AvatarURL // keep existing if no new file uploaded
 
@@ -427,6 +443,7 @@ func meHandler(w http.ResponseWriter, r *http.Request) {
 		if file != nil {
 			log.Printf("uploaded avatar file: %v", fh.Filename)
 
+			// TODO: ensure same-origin upload (CSRF protection)
 			typeDetected, size, err := filemanager.ValidateFile(
 				file,
 				fh,
@@ -595,8 +612,16 @@ func fileHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Another user can access their files if they have the link, which is by design
 	userRefID := parts[0]
 	filename := parts[1]
+
+	err = filemanager.ValidateFilename(filename)
+	if err != nil {
+		log.Printf("invalid filename: %v", err)
+		http.Error(w, "invalid filename", http.StatusBadRequest)
+		return
+	}
 
 	fileMeta, err := filemanager.GetFileByUserReferenceIDAndFilename(userRefID, filename)
 	if err != nil {
@@ -629,6 +654,11 @@ func linkHandler(w http.ResponseWriter, r *http.Request) {
 
 	if token == "" {
 		http.Error(w, "token is required", http.StatusBadRequest)
+		return
+	}
+
+	if !utils.ValidateOpaqueID(token) {
+		http.Error(w, "invalid token format", http.StatusBadRequest)
 		return
 	}
 
@@ -675,7 +705,7 @@ func handlerLoginMagic(w http.ResponseWriter, r *http.Request) {
 			http.MethodPost,
 		},
 		false, // check auth
-		false, // check ratelimit
+		false, // TODO: check ratelimit to prevent abuse
 		true,  // prevent cache
 	)
 	if err != nil {
@@ -690,6 +720,12 @@ func handlerLoginMagic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Clamp email length to prevent abuse
+	if len(email) > 254 {
+		http.Error(w, "email too long", http.StatusBadRequest)
+		return
+	}
+
 	email, err = mail.CanonicalizeEmail(email)
 	if err != nil {
 		http.Error(w, "invalid email", http.StatusBadRequest)
@@ -697,7 +733,7 @@ func handlerLoginMagic(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// generate a random token
-	token := utils.RandomString(16)
+	token := utils.NewOpaqueID()
 
 	// store the token with the email and expiration (15 minutes)
 	err = db.Storage.StoreMagicLinkToken(token, email, time.Now().UTC().Add(15*time.Minute))

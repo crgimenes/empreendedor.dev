@@ -89,6 +89,12 @@ func Send(req EmailRequest) (string, error) {
 // like we're doing in this system. However, this is a business decision that may
 // impact older systems that are still case-sensitive.
 func CanonicalizeEmail(input string) (string, error) {
+
+	// Clamp email length to reasonable limit (defensive)
+	if len(input) > 254 {
+		return "", fmt.Errorf("email too long")
+	}
+
 	s := strings.TrimSpace(input)
 
 	// Parse RFC 5322 to extract the bare address (handles: "Name <user@ex.com>")

@@ -203,6 +203,27 @@ func ValidateFile(
 	return typeDetected, size, nil
 }
 
+func ValidateFilename(filename string) error {
+	if filename == "" {
+		return ErrorFileNameInvalid
+	}
+	if len(filename) > maxFileNameLength {
+		return ErrorFileNameInvalid
+	}
+	// Prevent path traversal or directory components
+	if filepath.Base(filename) != filename {
+		return ErrorFileNameInvalid
+	}
+	// Invalid characters (defense-in-depth)
+	invalidChars := []rune{'/', '\\', '<', '>', ':', '"', '|', '?', '*'}
+	for _, char := range invalidChars {
+		if strings.ContainsRune(filename, char) {
+			return ErrorFileNameInvalid
+		}
+	}
+	return nil
+}
+
 // DataFilePath returns the directory path for storing processed data files for a given user.
 // It ensures that the directory exists, creating it if necessary.
 func DataFilePath(u *db.User) (string, error) {
@@ -218,6 +239,10 @@ func DataFilePath(u *db.User) (string, error) {
 			return "", err
 		}
 		wd = absWd
+	}
+
+	if len(u.ReferenceID) < 16 {
+		return "", errors.New("invalid user reference ID")
 	}
 
 	// shardes by first 2 letter of user reference ID

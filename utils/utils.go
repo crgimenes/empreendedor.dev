@@ -5,9 +5,16 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"io"
+	"regexp"
 	"strings"
 
 	"edev/log"
+)
+
+// compiled once for efficiency
+var (
+	reOpaqueID      = regexp.MustCompile(`^[A-Za-z0-9_-]{43}$`)
+	reOpaqueIDShort = regexp.MustCompile(`^[A-Za-z0-9_-]{22}$`)
 )
 
 // Closer close descriptor to use with defer.
@@ -41,6 +48,34 @@ func NewOpaqueID() string {
 
 func NewOpaqueIDShort() string {
 	return b64urlNoPad(randBytes(16))
+}
+
+// ValidateOpaqueID checks if s has a valid format for NewOpaqueID (32 bytes, base64url without padding) returns true if valid
+func ValidateOpaqueID(s string) bool {
+	if !reOpaqueID.MatchString(s) {
+		return false
+	}
+
+	data, err := base64.URLEncoding.WithPadding(base64.NoPadding).DecodeString(s)
+	if err != nil {
+		return false
+	}
+
+	return len(data) == 32
+}
+
+// ValidateOpaqueIDShort checks if s has a valid format for NewOpaqueIDShort (16 bytes, base64url without padding)
+func ValidateOpaqueIDShort(s string) bool {
+	if !reOpaqueIDShort.MatchString(s) {
+		return false
+	}
+
+	data, err := base64.URLEncoding.WithPadding(base64.NoPadding).DecodeString(s)
+	if err != nil {
+		return false
+	}
+
+	return len(data) == 16
 }
 
 func RandomString(n int) string {

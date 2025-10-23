@@ -16,8 +16,10 @@ import (
 )
 
 type session struct {
-	User      db.User `json:"user"`
-	ExpiresAt int64   `json:"expires_at"`
+	User         db.User `json:"user"`
+	ExpiresAt    int64   `json:"expires_at"`
+	FlashMessage string  `json:"flash_message,omitempty"`
+	FlashType    string  `json:"flash_type,omitempty"` // e.g. "success", "error", "info", ...
 }
 
 var (
@@ -30,13 +32,6 @@ var (
 
 	MaxSessionAge = int64(3600 * 3) // 3 hours in seconds
 )
-
-// imports necessários:
-// import (
-//     "bytes"
-//     "encoding/gob"
-//     "encoding/json"
-// )
 
 func Serialize() ([]byte, error) {
 	sessions.RLock()
