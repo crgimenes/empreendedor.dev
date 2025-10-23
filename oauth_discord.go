@@ -24,10 +24,11 @@ func (DiscordProvider) config() *oauth2.Config {
 		ClientID:     config.Cfg.DiscordClientID,
 		ClientSecret: config.Cfg.DiscordClientSecret,
 		RedirectURL:  config.Cfg.BaseURL + "/discord/oauth/callback",
-		Scopes:       []string{"read:user", "user:email"},
+		// Scopes required to retrieve username and email from /users/@me
+		Scopes: []string{"identify", "email"},
 		Endpoint: oauth2.Endpoint{
-			AuthURL:  "https://github.com/login/oauth/authorize",
-			TokenURL: "https://github.com/login/oauth/access_token",
+			AuthURL:  "https://discord.com/oauth2/authorize",
+			TokenURL: "https://discord.com/api/oauth2/token",
 		},
 	}
 }
@@ -74,13 +75,13 @@ func (p DiscordProvider) CallbackHandler(w http.ResponseWriter, r *http.Request)
 	}
 
 	client := oc.Client(ctx, tok)
-	req, _ := http.NewRequestWithContext(ctx, "GET", "https://api.github.com/user", nil)
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("X-Discord-Api-Version", "2022-11-28")
+	// Discord user endpoint; v10 is the current stable API.
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "https://discord.com/api/v10/users/@me", nil)
+	req.Header.Set("Accept", "application/json")
 
 	resp, err := client.Do(req)
 	if err != nil {
-		http.Error(w, "github /user failed: "+err.Error(), http.StatusBadGateway)
+		http.Error(w, "discord /users/@me failed: "+err.Error(), http.StatusBadGateway)
 		return
 	}
 	defer func() {
@@ -91,48 +92,51 @@ func (p DiscordProvider) CallbackHandler(w http.ResponseWriter, r *http.Request)
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		http.Error(w,
-			fmt.Sprintf(
-				"user endpoint status %d: %s",
-				resp.StatusCode,
-				string(b)),
+			fmt.Sprintf("users/@me status %d: %s", resp.StatusCode, string(b)),
 			http.StatusBadGateway)
 		return
 	}
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		http.Error(w, "read github user failed: "+err.Error(), http.StatusBadGateway)
+		http.Error(w, "read discord user failed: "+err.Error(), http.StatusBadGateway)
 		return
 	}
-	log.Printf("github user response: %s", string(body))
+	log.Printf("discord user response: %s", string(body))
 
-	var gu struct {
-		ID        int64  `json:"id"`
-		Login     string `json:"login"`
-		Name      string `json:"name"`
-		AvatarURL string `json:"avatar_url"`
-		Email     string `json:"email"`
+	// Minimal subset of Discord user fields needed.
+	var du struct {
+		ID         string `json:"id"`
+		Username   string `json:"username"`
+		GlobalName string `json:"global_name"`
+		Avatar     string `json:"avatar"`
+		Email      string `json:"email"`
+		Verified   bool   `json:"verified"`
 	}
-	err = json.Unmarshal(body, &gu)
+	err = json.Unmarshal(body, &du)
 	if err != nil {
 		http.Error(w, "decode user failed", http.StatusBadGateway)
 		return
 	}
 
-	if gu.ID == 0 || gu.Login == "" {
+	if du.ID == "" || du.Username == "" {
 		http.Error(w, "invalid user data", http.StatusBadGateway)
 		return
 	}
 
-	log.Printf("logged in user: ID=%d, Login=%s, Name=%s, AvatarURL=%s",
-		gu.ID, gu.Login, gu.Name, gu.AvatarURL)
+	avatarURL := discordAvatarURL(du.ID, du.Avatar)
+	username := du.Username
+	email := du.Email // may be empty if scope not granted; handled below
+
+	log.Printf("logged in Discord user: ID=%s, Username=%s, Email=%s, AvatarURL=%s",
+		du.ID, username, email, avatarURL)
 
 	u, err := db.Storage.GetUserOrCreateByOAuth(
 		"discord",
-		fmt.Sprintf("%d", gu.ID),
-		gu.Email,
-		gu.Login,
-		gu.AvatarURL)
+		du.ID,
+		email,
+		username,
+		avatarURL)
 	if err != nil {
 		http.Error(w, "get/create user failed: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -144,12 +148,26 @@ func (p DiscordProvider) CallbackHandler(w http.ResponseWriter, r *http.Request)
 
 	log.Printf("user %s logged in via Discord", u.Email)
 
-	// If user doesn't have username, redirect to /me to complete profile
-	if u.Username == "" {
-		log.Printf("user %s has no username, redirecting to /me", u.Email)
+	// If user does not have email, redirect to /me to complete profile (email is essential)
+	if u.Email == "" {
+		log.Printf("user %s has no email, redirecting to /me", u.Username)
 		http.Redirect(w, r, config.Cfg.BaseURL+"/me", http.StatusFound)
 		return
 	}
 
 	http.Redirect(w, r, config.Cfg.BaseURL+"/", http.StatusFound)
+}
+
+// discordAvatarURL builds the CDN avatar URL for a Discord user given id and avatar hash.
+// If avatar hash is empty, returns empty string (consumer may fall back to default avatar).
+func discordAvatarURL(userID, avatarHash string) string {
+	if userID == "" || avatarHash == "" {
+		return ""
+	}
+	ext := "png"
+	if len(avatarHash) > 2 && avatarHash[:2] == "a_" {
+		ext = "gif"
+	}
+	// 256 size is reasonable for avatars; Discord supports size query param.
+	return fmt.Sprintf("https://cdn.discordapp.com/avatars/%s/%s.%s?size=256", userID, avatarHash, ext)
 }
