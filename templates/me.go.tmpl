@@ -67,13 +67,6 @@
 
                             <!-- Avatar URL -->
                             <div class="mb-3">
-                                <label for="avatar_url" class="form-label">URL do Avatar</label>
-                                <input type="url" 
-                                       class="form-control" 
-                                       id="avatar_url" 
-                                       name="avatar_url" 
-                                    value="{{.User.AvatarURL}}"
-                                    placeholder="https://exemplo.com/avatar.jpg">
                                 {{if .User.AvatarURL}}
                                     <img src="{{.User.AvatarURL}}" alt="Avatar do usuario" 
                                         class="img-thumbnail mt-2" style="max-width: 100px;">

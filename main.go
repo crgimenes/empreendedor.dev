@@ -408,7 +408,8 @@ func meHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		username := r.FormValue("username")
-		avatarURL := r.FormValue("avatar_url")
+		//avatarURL := r.FormValue("avatar_url")
+		avatarURL := u.AvatarURL // keep existing if no new file uploaded
 
 		/// get files from form
 		file, fh, err := r.FormFile("avatar_file")
