@@ -899,11 +899,11 @@ func (s *SQLite) GetUserOrCreateByOAuth(
             CURRENT_TIMESTAMP  -- updated_at
         )
         RETURNING
-            id,                          -- 1
+            id,                         -- 1
             reference_id,               -- 2
-            COALESCE(username, ''),   -- 3
-            email,                       -- 4
-            COALESCE(avatar_url, ''), -- 5
+            COALESCE(username, ''),     -- 3
+            email,                      -- 4
+            COALESCE(avatar_url, ''),   -- 5
             enabled;` // 6
 
 	// enabled is true only if BOTH username AND email are present

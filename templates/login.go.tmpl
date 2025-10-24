@@ -18,22 +18,30 @@
                         <div class="mb-4">
                             <h6 class="card-subtitle mb-3">Conectar com:</h6>
                             {{if .Config.DiscordOAuthEnabled}}
-                                <a href="/login/discord" class="btn btn-primary w-100 mb-2" rel="nofollow">
+                                <a href="/login/discord" 
+                                    class="btn btn-primary w-100 mb-2" 
+                                    rel="nofollow">
                                     <i class="bi bi-discord"></i> Discord
                                 </a>
                             {{end}}
                             {{if .Config.GithubOAuthEnabled}}
-                                <a href="/login/github" class="btn btn-light w-100 mb-2" rel="nofollow">
+                                <a href="/login/github" 
+                                    class="btn btn-primary w-100 mb-2" 
+                                    rel="nofollow">
                                     <i class="bi bi-github"></i> GitHub
                                 </a>
                             {{end}}
                             {{if .Config.XOAuthEnabled}}
-                                <a href="/login/x" class="btn btn-info w-100 mb-2" rel="nofollow">
+                                <a href="/login/x" 
+                                   class="btn btn-info w-100 mb-2" 
+                                   rel="nofollow">
                                     <i class="bi bi-twitter-x"></i> X (Twitter)
                                 </a>
                             {{end}}
                             {{if .Config.FakeOAuthEnabled}}
-                                <a href="/login/fake" class="btn btn-secondary w-100 mb-2" rel="nofollow">
+                                <a href="/login/fake" 
+                                    class="btn btn-secondary w-100 mb-2" 
+                                    rel="nofollow">
                                     <i class="bi bi-person-fill"></i> Teste OAuth
                                 </a>
                             {{end}}
@@ -42,7 +50,8 @@
                         <!-- Divider -->
                         <div class="mb-4">
                             <hr>
-                            <div class="text-center text-muted" style="margin: -30px 0 15px; background: var(--bs-body-bg);">
+                            <div class="text-center text-muted" 
+                                style="margin: -30px 0 15px; background: var(--bs-body-bg);">
                                 <span style="padding: 0 10px;">ou</span>
                             </div>
                         </div>
@@ -51,7 +60,10 @@
                         <form method="post" action="/login/magic_link" id="magicLinkForm">
                             <div class="mb-3">
                                 <label for="email" class="form-label">Email</label>
-                                <input type="email" class="form-control" id="email" name="email" 
+                                <input type="email" 
+                                       class="form-control" 
+                                       id="email" 
+                                       name="email" 
                                     placeholder="seu@email.com" required>
                                 <small class="form-text text-muted">
                                     Enviaremos um link de login para seu email
