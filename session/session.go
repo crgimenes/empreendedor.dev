@@ -138,6 +138,28 @@ func Cleanup() {
 	sessions.Unlock()
 }
 
+// SyncSessions updates all sessions for the same user as in the given session ID.
+func SyncSessions(sid string) {
+	sessions.RLock()
+	s, ok := sessions.m[sid]
+	sessions.RUnlock()
+	if !ok {
+		return
+	}
+
+	sessions.Lock()
+	for key, sess := range sessions.m {
+		if key == sid {
+			continue
+		}
+		if sess.User.ID == s.User.ID {
+			sess.User = s.User
+			sessions.m[key] = sess
+		}
+	}
+	sessions.Unlock()
+}
+
 // ===== Cookie helpers =====
 
 // Cookie helpers

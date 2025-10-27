@@ -582,6 +582,7 @@ func meHandler(w http.ResponseWriter, r *http.Request) {
 
 		// Update session with new user data
 		session.Put(sid, *updatedUser)
+		session.SyncSessions(sid)
 
 		log.Printf("user %s updated profile", updatedUser.Email)
 
