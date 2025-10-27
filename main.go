@@ -47,7 +47,6 @@ func securityHeaders(next http.Handler) http.Handler {
 		"script-src 'self'",
 		"style-src 'self' 'unsafe-inline'",
 		"img-src 'self' data: https: *.githubusercontent.com github.com *.twimg.com pbs.twimg.com",
-		"style-src 'self' 'unsafe-inline'",
 		"frame-ancestors 'none'",
 	}, "; ")
 
@@ -79,6 +78,7 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 	_, _, _, err := prelude(w, r,
 		[]string{
 			http.MethodGet,
+			http.MethodHead,
 		},
 		false, // check auth
 		false, // check ratelimit
@@ -87,6 +87,14 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("prelude error: %v", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	if r.Method == http.MethodHead {
+		w.WriteHeader(http.StatusOK)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Content-Length", "0")
+		w.Write([]byte{})
 		return
 	}
 
