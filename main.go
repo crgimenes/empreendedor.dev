@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/url"
 	"os"
@@ -716,6 +717,113 @@ func linkHandler(w http.ResponseWriter, r *http.Request) {
 
 }
 
+func sseHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// check session - session is required for SSE
+	sid, ok := session.GetCookie(r)
+	if !ok {
+		log.Printf("SSE: No session cookie found")
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	u, ok := session.Get(sid)
+	if !ok {
+		log.Printf("SSE: Session %s not found in store", sid[:min(8, len(sid))])
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// user must be enabled to use SSE
+	if !u.Enabled {
+		log.Printf("SSE: User %s is not enabled (enabled=%v)", u.Email, u.Enabled)
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	log.Printf("SSE connection opened for user %s (session %s)", u.Email, sid[:8])
+
+	// Disable write deadline for SSE connections
+	rc := http.NewResponseController(w)
+	if rc != nil {
+		_ = rc.SetWriteDeadline(time.Time{})
+	}
+
+	// Set headers for SSE - critical for client reconnection behavior
+	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache, no-transform")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Keep-Alive", "timeout=60")
+	w.Header().Set("X-Accel-Buffering", "no") // disable nginx buffering
+
+	// Ensure response writer supports flushing
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	// Send initial SSE directives/data to confirm connection on client
+	// Optional retry directive (client default is fine, but explicit is ok)
+	_, _ = fmt.Fprintf(w, "retry: 10000\n") // suggest 10s retry if client reconnects
+	_, _ = fmt.Fprintf(w, "data: ready\n\n")
+	flusher.Flush()
+
+	// Create channel for this session with a larger buffer to absorb short bursts
+	ch := make(chan string, 64)
+	session.RegisterSSEChannel(sid, ch)
+
+	defer func() {
+		session.UnregisterSSEChannel(sid, ch)
+		close(ch)
+		log.Printf("SSE connection closed for user %s", u.Email)
+	}()
+
+	ctx := r.Context()
+	// Many proxies use a 30s idle timeout; send heartbeat sooner to avoid drop
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	// periodic heartbeat to keep connection alive (prevents timeout by proxy/firewall)
+	// and allows detecting client disconnection
+	for {
+		select {
+		case <-ctx.Done():
+			// Client disconnected or connection timeout
+			log.Printf("SSE context done for user %s: %v", u.Email, ctx.Err())
+			return
+
+		case <-ticker.C:
+			// Send heartbeat as data event so clients see activity and proxies keep stream
+			_, err := fmt.Fprintf(w, "data: heartbeat\n\n")
+			if err != nil {
+				log.Printf("SSE heartbeat write error: %v", err)
+				return
+			}
+			flusher.Flush()
+		case msg, ok := <-ch:
+			if !ok {
+				// Channel closed, connection shutting down
+				return
+			}
+
+			// Format message according to SSE spec
+			// Format: event: type\ndata: payload\n\n
+			_, err := fmt.Fprintf(w, "data: %s\n\n", msg)
+			if err != nil {
+				log.Printf("SSE write error: %v", err)
+				return
+			}
+			flusher.Flush()
+			log.Printf("SSE message sent to user %s: %q", u.Email, msg)
+		}
+	}
+}
+
 func handlerLoginMagic(w http.ResponseWriter, r *http.Request) {
 	// prelude
 	_, _, _, err := prelude(w, r,
@@ -865,6 +973,19 @@ func main() {
 
 	mux.HandleFunc("/logout", logoutHandler)
 	mux.HandleFunc("/me", meHandler) // user profile
+
+	mux.HandleFunc("/events", sseHandler) // server-sent events
+
+	// Debug broadcast endpoint (unsafe, for manual testing only)
+	mux.HandleFunc("/msg", func(w http.ResponseWriter, r *http.Request) {
+		msg := r.URL.Query().Get("msg")
+		if msg == "" {
+			msg = "debug"
+		}
+		n := session.BroadcastSSENotification(msg)
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		fmt.Fprintf(w, "sent to %d channels\n", n)
+	})
 
 	// filemanager routes (user files, images, etc.)
 	mux.HandleFunc("/file/", fileHandler)

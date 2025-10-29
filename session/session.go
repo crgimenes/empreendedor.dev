@@ -6,20 +6,22 @@ In-memory session store (opaque SID -> db.User).
 
 import (
 	"bytes"
-	"edev/db"
 	"encoding/gob"
 	"log"
 	"net/http"
 	"os"
 	"sync"
 	"time"
+
+	"edev/db"
 )
 
 type session struct {
-	User         db.User `json:"user"`
-	ExpiresAt    int64   `json:"expires_at"`
-	FlashMessage string  `json:"flash_message,omitempty"`
-	FlashType    string  `json:"flash_type,omitempty"` // e.g. "success", "error", "info", ...
+	User         db.User                  `json:"user"`
+	channels     map[chan string]struct{} `json:"-"` // multiple SSE channels per session (not serialized)
+	ExpiresAt    int64                    `json:"expires_at"`
+	FlashMessage string                   `json:"flash_message,omitempty"`
+	FlashType    string                   `json:"flash_type,omitempty"` // e.g. "success", "error", "info", ...
 }
 
 var (
@@ -32,6 +34,139 @@ var (
 
 	MaxSessionAge = int64(3600 * 3) // 3 hours in seconds
 )
+
+// Register SSE notifications channel (not serialized)
+func RegisterSSEChannel(sid string, ch chan string) {
+	// Ownership model:
+	// - The SSE handler creates and OWNS the channel; it will close(ch) in its defer.
+	// - The session store holds references to ALL active channels for this sid.
+	// - We DO NOT close any channels here to avoid races with concurrent sends.
+	sessions.Lock()
+	sess, ok := sessions.m[sid]
+	if ok {
+		if sess.channels == nil {
+			sess.channels = make(map[chan string]struct{})
+		}
+		sess.channels[ch] = struct{}{}
+		sessions.m[sid] = sess
+	}
+	sessions.Unlock()
+}
+
+// SendSSENotification sends a notification message to the session's SSE channel.
+func SendSSENotification(sid string, msg string) {
+	// Snapshot current channels under read lock
+	sessions.RLock()
+	var list []chan string
+	sess, ok := sessions.m[sid]
+	if ok && len(sess.channels) > 0 {
+		list = make([]chan string, 0, len(sess.channels))
+		for ch := range sess.channels {
+			list = append(list, ch)
+		}
+	}
+	sessions.RUnlock()
+
+	if len(list) == 0 {
+		return
+	}
+
+	// Send with short timeout to reduce drops; prune closed channels
+	var stale []chan string
+	for _, ch := range list {
+		func(ch chan string) {
+			defer func() {
+				if r := recover(); r != nil {
+					// closed channel; mark stale for cleanup
+					stale = append(stale, ch)
+				}
+			}()
+			select {
+			case ch <- msg:
+				// sent
+			case <-time.After(200 * time.Millisecond):
+				// timed out, drop
+			}
+		}(ch)
+	}
+
+	if len(stale) > 0 {
+		sessions.Lock()
+		if sess, ok := sessions.m[sid]; ok && len(sess.channels) > 0 {
+			for _, ch := range stale {
+				delete(sess.channels, ch)
+			}
+			sessions.m[sid] = sess
+		}
+		sessions.Unlock()
+	}
+}
+
+// BroadcastSSENotification sends a message to all active channels across all sessions.
+// Returns the number of channels that accepted the message (non-blocking sends only).
+func BroadcastSSENotification(msg string) int {
+	// Snapshot channels under read lock
+	sessions.RLock()
+	var all []chan string
+	if len(sessions.m) > 0 {
+		all = make([]chan string, 0, len(sessions.m))
+		for _, sess := range sessions.m {
+			for ch := range sess.channels {
+				all = append(all, ch)
+			}
+		}
+	}
+	sessions.RUnlock()
+
+	if len(all) == 0 {
+		return 0
+	}
+
+	var stale []chan string
+	sent := 0
+	for _, ch := range all {
+		func(ch chan string) {
+			defer func() {
+				if r := recover(); r != nil {
+					stale = append(stale, ch)
+				}
+			}()
+			select {
+			case ch <- msg:
+				sent++
+			case <-time.After(200 * time.Millisecond):
+				// timed out, drop
+			}
+		}(ch)
+	}
+
+	if len(stale) > 0 {
+		sessions.Lock()
+		for sid, sess := range sessions.m {
+			if len(sess.channels) == 0 {
+				continue
+			}
+			for _, ch := range stale {
+				delete(sess.channels, ch)
+			}
+			sessions.m[sid] = sess
+		}
+		sessions.Unlock()
+	}
+
+	return sent
+}
+
+// UnregisterSSEChannel removes the SSE notifications channel from the session.
+func UnregisterSSEChannel(sid string, ch chan string) {
+	sessions.Lock()
+	sess, ok := sessions.m[sid]
+	if ok && len(sess.channels) > 0 {
+		delete(sess.channels, ch)
+		sessions.m[sid] = sess
+	}
+	sessions.Unlock()
+}
 
 func Serialize() ([]byte, error) {
 	sessions.RLock()
