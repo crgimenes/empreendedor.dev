@@ -874,8 +874,7 @@ func main() {
 		Addr:              config.Cfg.Addrs,
 		Handler:           securityHeaders(mux),
 		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       10 * time.Second,
-		WriteTimeout:      15 * time.Second,
+		WriteTimeout:      0, // ***CRITICAL*** disable write timeout for long-lived connections (SSE)
 		IdleTimeout:       60 * time.Second,
 	}
 
