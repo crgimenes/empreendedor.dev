@@ -733,7 +733,15 @@ func sseHandler(w http.ResponseWriter, r *http.Request) {
 
 	u, ok := session.Get(sid)
 	if !ok {
-		log.Printf("SSE: Session %s not found in store", sid[:min(8, len(sid))])
+		n := 8
+		if len(sid) < n {
+			n = len(sid)
+		}
+		if n < 0 {
+			n = 0
+		}
+		sidPrefix := sid[:n]
+		log.Printf("SSE: Session %s not found in store", sidPrefix)
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
