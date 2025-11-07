@@ -213,7 +213,9 @@ func (p XProvider) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 		xu.Data.Username,
 		xu.Data.ProfileImageURL)
 	if err != nil {
-		http.Error(w, "get/create user failed: "+err.Error(), http.StatusInternalServerError)
+		log.Printf("GetUserOrCreateByOAuth failed: %v; X requires email for fallback", err)
+		// X does not provide email, so fallback is not possible
+		http.Error(w, "user creation failed: "+err.Error()+"; email is required but X API does not provide it", http.StatusInternalServerError)
 		return
 	}
 

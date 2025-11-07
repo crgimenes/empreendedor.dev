@@ -1,30 +1,28 @@
 {{define "navbar"}}
 <nav class="navbar navbar-expand-lg navbar-dark bg-dark border-bottom">
   <div class="container-fluid">
-    <a class="navbar-brand" href="/">Empreendedor.dev</a>
-    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+    <a class="navbar-brand" href="/">empreendedor.dev</a>
+    <button class="navbar-toggler" 
+        type="button" 
+        data-bs-toggle="collapse" 
+        data-bs-target="#navbarNav" 
+        aria-controls="navbarNav" 
+        aria-expanded="false" 
+        aria-label="Toggle navigation">
       <span class="navbar-toggler-icon"></span>
     </button>
     <div class="collapse navbar-collapse" id="navbarNav">
       <ul class="navbar-nav ms-auto">
         {{if .Authed}}
-          <li class="nav-item dropdown">
-            <a class="nav-link dropdown-toggle" href="#" id="userDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-              {{if .User.AvatarURL}}
-                <img src="{{.User.AvatarURL}}" alt="Avatar" class="rounded-circle" width="32" height="32">
-              {{else}}
-                <span class="badge bg-secondary">{{.User.Username}}</span>
-              {{end}}
-            </a>
-            <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
-              <li><span class="dropdown-item-text">{{.User.Email}}</span></li>
-              <li><hr class="dropdown-divider"></li>
-              <li><a class="dropdown-item" href="/me">Meu Perfil</a></li>
-              <li><hr class="dropdown-divider"></li>
-              <li><a class="dropdown-item" href="/logout">Sair</a></li>
-            </ul>
+          <!-- File Manager Link -->
+          <li class="nav-item">
+              <a class="nav-link" href="/files">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-folder" viewBox="0 0 16 16">
+  <path d="M.54 3.87.5 3a2 2 0 0 1 2-2h3.672a2 2 0 0 1 1.414.586l.828.828A2 2 0 0 0 9.828 3h3.982a2 2 0 0 1 1.992 2.181l-.637 7A2 2 0 0 1 13.174 14H2.826a2 2 0 0 1-1.991-1.819l-.637-7a2 2 0 0 1 .342-1.31zM2.19 4a1 1 0 0 0-.996 1.09l.637 7a1 1 0 0 0 .995.91h10.348a1 1 0 0 0 .995-.91l.637-7A1 1 0 0 0 13.81 4zm4.69-1.707A1 1 0 0 0 6.172 2H2.5a1 1 0 0 0-1 .981l.006.139q.323-.119.684-.12h5.396z"/>
+</svg> Arquivos</a>
           </li>
-        {{else}}
+          {{template "user_menu" .}}
+       {{else}}
           <li class="nav-item">
             <a class="nav-link" href="/login">Login</a>
           </li>

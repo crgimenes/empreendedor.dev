@@ -1,0 +1,55 @@
+{{define "filemanager_delete_confirm.go.tmpl"}}
+<!doctype html>
+<html lang="pt-BR" data-bs-theme="dark">
+<head>
+  {{template "head" .}}
+</head>
+<body>
+  {{template "filemanager_navbar" .}}
+  <main class="container py-5">
+    <div class="row justify-content-center">
+      <div class="col-md-8">
+        <div class="card border-danger-subtle">
+          <div class="card-body">
+            <h1 class="h5 card-title mb-3">Confirmar exclusão</h1>
+            <p class="mb-4">Tem certeza que deseja excluir o arquivo <strong>{{.File.OriginalFilename}}</strong>?</p>
+
+            <div class="ratio ratio-1x1 bg-body-secondary d-flex align-items-center justify-content-center rounded overflow-hidden mb-3">
+              {{- if eq .MediaKind "image" -}}
+                <img src="/file/{{.User.ReferenceID}}/{{urlquery .File.Filename}}" alt="{{.File.OriginalFilename}}" class="w-100 h-100 object-fit-contain">
+              {{- else if eq .MediaKind "video" -}}
+                <video src="/file/{{.User.ReferenceID}}/{{urlquery .File.Filename}}" class="w-100 h-100 object-fit-contain" preload="metadata" playsinline muted>
+                  Seu navegador não suporta a reprodução de vídeo.
+                </video>
+              {{- else if eq .MediaKind "audio" -}}
+                <audio src="/file/{{.User.ReferenceID}}/{{urlquery .File.Filename}}" class="w-100" controls>
+                  Seu navegador não suporta a reprodução de áudio.
+                </audio>
+              {{- else -}}
+                {{template "icon-file" .}}
+              {{- end }}
+            </div>
+
+            <form method="POST" action="/files/delete" class="d-flex gap-2">
+              <input type="hidden" name="csrf_token" value="{{.Csrf}}">
+              <input type="hidden" name="file_id" value="{{.File.Filename}}">
+              <input type="hidden" name="confirm" value="yes">
+              <a href="/files/edit?id={{.File.Filename}}" class="btn btn-secondary">Cancelar</a>
+              <button type="submit" class="btn btn-danger d-inline-flex align-items-center gap-2">
+                {{template "icon-trash" .}}
+                <span>Excluir definitivamente</span>
+              </button>
+            </form>
+
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+  <footer>
+    {{template "footer" .}}
+  </footer>
+  {{template "scripts" .}}
+</body>
+</html>
+{{end}}

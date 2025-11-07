@@ -1,11 +1,12 @@
 package migration
 
 import (
-	"edev/config"
-	"edev/db"
 	"strings"
 	"testing"
 	"testing/fstest"
+
+	"edev/config"
+	"edev/db"
 )
 
 func TestFindMigrationFile(t *testing.T) {

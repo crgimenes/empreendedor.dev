@@ -1,0 +1,16 @@
+{{define "filemanager_list"}}
+{{/* Grid items only; parent container provides the row wrapper */}}
+{{- range .Files }}
+<div class="col">{{template "file-card" .}}</div>
+{{- end }}
+
+{{/* Infinite scroll sentinel to fetch the next page (if any). */}}
+{{- if .HasMore }}
+<div class="col-12 text-center py-3"
+  hx-get="/files/list?offset={{.NextOffset}}&limit={{.Limit}}{{if .Q}}&q={{.Q | urlquery}}{{end}}{{if .Sort}}&sort={{.Sort | urlquery}}{{end}}"
+     hx-trigger="revealed"
+     hx-swap="outerHTML">
+  <div class="small text-body-secondary">Carregando mais...</div>
+</div>
+{{- end }}
+{{end}}

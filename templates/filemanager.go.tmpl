@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="pt-BR" data-bs-theme="dark">
+  <head>
+    {{template "head" .}}
+  </head>
+
+  <body>
+    {{template "filemanager_navbar" .}}
+
+      <main class="container py-4 py-md-5">
+        <!-- Header: title and primary actions -->
+        <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between gap-3 mb-4">
+          <div>
+            <h1 class="h3 mb-0">Meus Arquivos</h1>
+            <small class="text-body-secondary">Gerencie e organize seus arquivos</small>
+          </div>
+          <div class="ms-md-auto d-flex flex-column align-items-start align-items-md-end gap-2">
+            <a href="/files/upload" class="btn btn-primary d-inline-flex align-items-center gap-2">
+              {{template "icon-upload" .}}
+              <span>Upload de arquivo</span>
+            </a>
+            <!-- Quota indicator (will be updated later via HTMX) -->
+            <div id="quota" class="text-body-secondary small" hx-get="/files/quota" hx-trigger="load" hx-swap="outerHTML">
+              Você está usando 0 de 0 MB disponíveis.
+            </div>
+          </div>
+        </div>
+
+        <!-- Filters and controls bar -->
+        <section aria-label="Controles de listagem" class="card mb-4 border-0 bg-body-tertiary">
+          <div class="card-body py-3">
+            <form class="row g-2 align-items-end"
+                  hx-get="/files/list"
+                  hx-target="#file-list"
+                  hx-trigger="submit">
+              <!-- Campo de busca -->
+              <div class="col-12 col-md-9">
+                <label for="search" class="form-label small text-body-secondary mb-1">Buscar</label>
+                <input
+                  id="search"
+                  name="q"
+                  class="form-control"
+                  type="search"
+                  placeholder="Buscar por nome, descrição ou tags"
+                  hx-get="/files/list"
+                  hx-target="#file-list"
+                  hx-trigger="keyup changed delay:300ms"
+                  hx-include="closest form"
+                  autocomplete="off"
+                />
+              </div>
+
+              <!-- Ordenação -->
+              <div class="col-12 col-md-3">
+                <label for="sort" class="form-label small text-body-secondary mb-1">Ordenar por</label>
+    <select id="sort" name="sort" class="form-select"
+      hx-get="/files/list" hx-target="#file-list" hx-trigger="change" hx-include="closest form">
+                  <option value="date_desc" selected>Data de envio (recente primeiro)</option>
+                  <option value="name_asc">Nome (A-Z)</option>
+                </select>
+              </div>
+            </form>
+          </div>
+        </section>
+
+        <!-- File list grid -->
+        <section aria-label="Lista de arquivos">
+          <div id="file-list" class="row row-cols-1 row-cols-sm-2 row-cols-md-3 row-cols-lg-4 g-3">
+            {{template "filemanager_list" .}}
+          </div>
+        </section>
+
+      </main>
+    
+    <footer>
+      {{template "footer" .}}
+    </footer>
+    {{template "scripts" .}}
+    <!-- Page specific scripts -->
+    <script defer src="/assets/htmx.min.js?v={{ .Config.GitTag }}"></script>
+    <script defer src="/assets/video-autoplay.min.js?v={{ .Config.GitTag }}"></script>
+  </body>
+</html>
+

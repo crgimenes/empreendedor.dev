@@ -2,7 +2,6 @@ package db
 
 import (
 	"database/sql"
-	"edev/utils"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -11,6 +10,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"edev/utils"
 )
 
 // helper: unwrap rows/error
@@ -327,7 +328,7 @@ func initTestDB(t *testing.T) *SQLite {
 	// Create schema from 001_base_system.up.sql
 	// Execute each CREATE statement separately because s.Exec only handles one statement at a time.
 	statements := []string{
-		`CREATE TABLE IF NOT EXISTS users (
+		`CREATE TABLE IF NOT EXISTS edev_core_users (
     id INTEGER PRIMARY KEY,
 	reference_id TEXT NOT NULL UNIQUE DEFAULT "", -- a trigger will set this to a UUID
     username TEXT,
@@ -337,9 +338,9 @@ func initTestDB(t *testing.T) *SQLite {
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 )`,
-		`CREATE TABLE IF NOT EXISTS identities (
+		`CREATE TABLE IF NOT EXISTS edev_core_identities (
     id INTEGER PRIMARY KEY,
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES edev_core_users(id) ON DELETE CASCADE,
     provider TEXT NOT NULL,
     provider_uid TEXT NOT NULL,
     avatar_url TEXT,
@@ -347,8 +348,8 @@ func initTestDB(t *testing.T) *SQLite {
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(provider, provider_uid)
 )`,
-		`CREATE INDEX IF NOT EXISTS idx_identities_user_id ON identities(user_id)`,
-		`CREATE TABLE IF NOT EXISTS magic_token (
+		`CREATE INDEX IF NOT EXISTS idx_edev_core_identities_user_id ON edev_core_identities(user_id)`,
+		`CREATE TABLE IF NOT EXISTS edev_core_magic_token (
     id INTEGER PRIMARY KEY,
     email TEXT NOT NULL,
     token TEXT NOT NULL UNIQUE,
@@ -356,10 +357,10 @@ func initTestDB(t *testing.T) *SQLite {
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     expires_at DATETIME NOT NULL DEFAULT (DATETIME('now', '+3 hour'))
 )`,
-		`CREATE TRIGGER IF NOT EXISTS users_reference_uuid
-AFTER INSERT ON users
+		`CREATE TRIGGER IF NOT EXISTS edev_core_users_reference_uuid
+AFTER INSERT ON edev_core_users
 BEGIN
-  UPDATE users
+  UPDATE edev_core_users
   SET reference_id = (
     select substr(u,1,8)||'-'||
     substr(u,9,4)||'-4'||
@@ -392,13 +393,13 @@ func TestGetUserByOAuthProviderID(t *testing.T) {
 
 	// Insert a test user and identity.
 	if err := s.Exec(`
-		INSERT INTO users (username, email, enabled) VALUES (?, ?, ?)
+		INSERT INTO edev_core_users (username, email, enabled) VALUES (?, ?, ?)
 	`, "testuser", "test@example.com", 1); err != nil {
 		t.Fatalf("insert user: %v", err)
 	}
 
 	if err := s.Exec(`
-		INSERT INTO identities (user_id, provider, provider_uid) VALUES (?, ?, ?)
+		INSERT INTO edev_core_identities (user_id, provider, provider_uid) VALUES (?, ?, ?)
 	`, 1, "github", "gh_12345"); err != nil {
 		t.Fatalf("insert identity: %v", err)
 	}
@@ -485,7 +486,7 @@ func TestStoreMagicLinkToken(t *testing.T) {
 			if !tt.wantErr {
 				// Verify token was stored
 				var storedEmail string
-				err := s.QueryRow(`SELECT email FROM magic_token WHERE token = ?`, tt.token).Scan(&storedEmail)
+				err := s.QueryRow(`SELECT email FROM edev_core_magic_token WHERE token = ?`, tt.token).Scan(&storedEmail)
 				if err != nil {
 					t.Fatalf("verify token: %v", err)
 				}
@@ -557,19 +558,19 @@ func TestPurgeExpiredMagicLinkTokens(t *testing.T) {
 	s := initTestDB(t)
 	defer s.Close()
 
-	// Insert an expired token
+	// Insert an expired token using SQLite's time functions
 	if err := s.Exec(`
-		INSERT INTO magic_token (email, token, action, expires_at)
-		VALUES (?, ?, ?, ?)
-	`, "expired@example.com", "tok_expired", "login", time.Now().Add(-1*time.Hour)); err != nil {
+		INSERT INTO edev_core_magic_token (email, token, action, expires_at)
+		VALUES (?, ?, ?, DATETIME('now', '-1 hour'))
+	`, "expired@example.com", "tok_expired", "login"); err != nil {
 		t.Fatalf("insert expired token: %v", err)
 	}
 
-	// Insert a valid (future) token
+	// Insert a valid (future) token using SQLite's time functions
 	if err := s.Exec(`
-		INSERT INTO magic_token (email, token, action, expires_at)
-		VALUES (?, ?, ?, ?)
-	`, "valid@example.com", "tok_valid", "login", time.Now().Add(3*time.Hour)); err != nil {
+		INSERT INTO edev_core_magic_token (email, token, action, expires_at)
+		VALUES (?, ?, ?, DATETIME('now', '+3 hour'))
+	`, "valid@example.com", "tok_valid", "login"); err != nil {
 		t.Fatalf("insert valid token: %v", err)
 	}
 
@@ -580,7 +581,7 @@ func TestPurgeExpiredMagicLinkTokens(t *testing.T) {
 
 	// Verify expired token is gone
 	var expiredCount int
-	if err := s.QueryRow(`SELECT COUNT(*) FROM magic_token WHERE token = ?`, "tok_expired").Scan(&expiredCount); err != nil {
+	if err := s.QueryRow(`SELECT COUNT(*) FROM edev_core_magic_token WHERE token = ?`, "tok_expired").Scan(&expiredCount); err != nil {
 		t.Fatalf("count expired: %v", err)
 	}
 	if expiredCount != 0 {
@@ -589,7 +590,7 @@ func TestPurgeExpiredMagicLinkTokens(t *testing.T) {
 
 	// Verify valid token still exists
 	var validCount int
-	if err := s.QueryRow(`SELECT COUNT(*) FROM magic_token WHERE token = ?`, "tok_valid").Scan(&validCount); err != nil {
+	if err := s.QueryRow(`SELECT COUNT(*) FROM edev_core_magic_token WHERE token = ?`, "tok_valid").Scan(&validCount); err != nil {
 		t.Fatalf("count valid: %v", err)
 	}
 	if validCount != 1 {
@@ -605,7 +606,7 @@ func TestGetUserByID(t *testing.T) {
 
 	// Insert test user
 	if err := s.Exec(`
-		INSERT INTO users (username, email, enabled, avatar_url)
+		INSERT INTO edev_core_users (username, email, enabled, avatar_url)
 		VALUES (?, ?, ?, ?)
 	`, "johndoe", "john@example.com", 1, "https://avatar.example.com/john.jpg"); err != nil {
 		t.Fatalf("insert user: %v", err)
@@ -777,7 +778,7 @@ func TestGetUserOrCreateByOAuth(t *testing.T) {
 				// Verify identity was created
 				var identityCount int
 				if err := s.QueryRow(`
-					SELECT COUNT(*) FROM identities
+					SELECT COUNT(*) FROM edev_core_identities
 					WHERE user_id = ? AND provider = ? AND provider_uid = ?
 				`, u.ID, tt.provider, tt.providerID).Scan(&identityCount); err != nil {
 					t.Fatalf("count identities: %v", err)
@@ -943,7 +944,7 @@ func TestStoreMagicLinkTokenComprehensive(t *testing.T) {
 			if !tt.wantErr {
 				// Verify token was stored
 				var storedEmail string
-				const query = `SELECT email FROM magic_token WHERE token = ?`
+				const query = `SELECT email FROM edev_core_magic_token WHERE token = ?`
 				err := s.QueryRow(query, tt.token).Scan(&storedEmail)
 				if err != nil {
 					t.Fatalf("failed to verify stored token: %v", err)
@@ -1022,7 +1023,7 @@ func TestConsumeMagicLinkTokenComprehensive(t *testing.T) {
 			// Verify token was deleted only if it was successfully consumed
 			if email != "" {
 				var count int
-				const countQuery = `SELECT COUNT(*) FROM magic_token WHERE token = ?`
+				const countQuery = `SELECT COUNT(*) FROM edev_core_magic_token WHERE token = ?`
 				if err := s.QueryRow(countQuery, tt.token).Scan(&count); err != nil {
 					t.Fatalf("failed to count token: %v", err)
 				}
@@ -1073,7 +1074,7 @@ func TestPurgeExpiredMagicLinkTokensComprehensive(t *testing.T) {
 
 	// Verify expired tokens are gone
 	var count int
-	const countExpired = `SELECT COUNT(*) FROM magic_token WHERE expires_at <= CURRENT_TIMESTAMP`
+	const countExpired = `SELECT COUNT(*) FROM edev_core_magic_token WHERE expires_at <= CURRENT_TIMESTAMP`
 	if err := s.QueryRow(countExpired).Scan(&count); err != nil {
 		t.Fatalf("failed to count expired: %v", err)
 	}
@@ -1083,7 +1084,7 @@ func TestPurgeExpiredMagicLinkTokensComprehensive(t *testing.T) {
 
 	// Verify valid token still exists
 	var validExists int
-	const countValid = `SELECT COUNT(*) FROM magic_token WHERE token = ?`
+	const countValid = `SELECT COUNT(*) FROM edev_core_magic_token WHERE token = ?`
 	if err := s.QueryRow(countValid, "valid-1").Scan(&validExists); err != nil {
 		t.Fatalf("failed to verify valid token: %v", err)
 	}
@@ -1106,7 +1107,7 @@ func TestGetUserByOAuthProviderIDComprehensive(t *testing.T) {
 			name: "existing oauth identity",
 			setupFunc: func(t *testing.T, s *SQLite) {
 				// Create a user
-				const userSQL = `INSERT INTO users(email, username, avatar_url) VALUES(?, ?, ?)
+				const userSQL = `INSERT INTO edev_core_users(email, username, avatar_url) VALUES(?, ?, ?)
 				RETURNING id`
 				var userID int64
 				if err := s.QueryRowRW(userSQL, "oauth@example.com", "oauthuser", "").Scan(&userID); err != nil {
@@ -1114,7 +1115,7 @@ func TestGetUserByOAuthProviderIDComprehensive(t *testing.T) {
 				}
 
 				// Create identity
-				const identitySQL = `INSERT INTO identities(user_id, provider, provider_uid)
+				const identitySQL = `INSERT INTO edev_core_identities(user_id, provider, provider_uid)
 				VALUES(?, ?, ?)`
 				if err := s.Exec(identitySQL, userID, "github", "gh-123"); err != nil {
 					t.Fatalf("setup identity: %v", err)
@@ -1165,7 +1166,7 @@ func TestGetUserByIDComprehensive(t *testing.T) {
 		{
 			name: "existing user",
 			setupFunc: func(t *testing.T, s *SQLite) int64 {
-				const sql = `INSERT INTO users(email, username, avatar_url, enabled)
+				const sql = `INSERT INTO edev_core_users(email, username, avatar_url, enabled)
 				VALUES(?, ?, ?, ?) RETURNING id`
 				var id int64
 				if err := s.QueryRowRW(sql,
@@ -1234,7 +1235,7 @@ func TestGetUserOrCreateByEmailComprehensive(t *testing.T) {
 		{
 			name: "get existing user",
 			setupFunc: func(t *testing.T, s *SQLite) {
-				const sql = `INSERT INTO users(email, username, avatar_url) VALUES(?, ?, ?)`
+				const sql = `INSERT INTO edev_core_users(email, username, avatar_url) VALUES(?, ?, ?)`
 				if err := s.Exec(sql, "existing@example.com", "existinguser", ""); err != nil {
 					t.Fatalf("setup: %v", err)
 				}
@@ -1295,14 +1296,14 @@ func TestGetUserOrCreateByOAuthComprehensive(t *testing.T) {
 			name: "get existing oauth user",
 			setupFunc: func(t *testing.T, s *SQLite) {
 				// Create existing user with identity
-				const userSQL = `INSERT INTO users(email, username, avatar_url) VALUES(?, ?, ?)
+				const userSQL = `INSERT INTO edev_core_users(email, username, avatar_url) VALUES(?, ?, ?)
 				RETURNING id`
 				var userID int64
 				if err := s.QueryRowRW(userSQL, "existing@github.com", "existinggithub", "").Scan(&userID); err != nil {
 					t.Fatalf("setup user: %v", err)
 				}
 
-				const identitySQL = `INSERT INTO identities(user_id, provider, provider_uid)
+				const identitySQL = `INSERT INTO edev_core_identities(user_id, provider, provider_uid)
 				VALUES(?, ?, ?)`
 				if err := s.Exec(identitySQL, userID, "github", "gh-existing"); err != nil {
 					t.Fatalf("setup identity: %v", err)
@@ -1342,7 +1343,7 @@ func TestGetUserOrCreateByOAuthComprehensive(t *testing.T) {
 
 				// Verify identity was created
 				var identityCount int
-				const countSQL = `SELECT COUNT(*) FROM identities
+				const countSQL = `SELECT COUNT(*) FROM edev_core_identities
 				WHERE provider = ? AND provider_uid = ?`
 				if err := s.QueryRow(countSQL, tt.provider, tt.providerID).Scan(&identityCount); err != nil {
 					t.Fatalf("failed to count identities: %v", err)
@@ -1560,7 +1561,7 @@ func TestOAuthEmailConflictResolution(t *testing.T) {
 
 	// Step 4: Verify GitHub identity was added to existing user
 	var identityCount int
-	const countSQL = `SELECT COUNT(*) FROM identities WHERE user_id = ? AND provider = ? AND provider_uid = ?`
+	const countSQL = `SELECT COUNT(*) FROM edev_core_identities WHERE user_id = ? AND provider = ? AND provider_uid = ?`
 	if err := s.QueryRow(countSQL, magicLinkUser.ID, "github", "gh-12345").Scan(&identityCount); err != nil {
 		t.Fatalf("count identities: %v", err)
 	}
@@ -1607,7 +1608,7 @@ func TestOAuthUsernameConflictGeneration(t *testing.T) {
 
 	// Step 4: Verify both users exist and have different usernames
 	var user1ID int64
-	const checkSQL = `SELECT id FROM users WHERE LOWER(email) = LOWER(?)`
+	const checkSQL = `SELECT id FROM edev_core_users WHERE LOWER(email) = LOWER(?)`
 	if err := s.QueryRow(checkSQL, email1).Scan(&user1ID); err != nil {
 		t.Fatalf("query user1: %v", err)
 	}
@@ -1629,10 +1630,10 @@ func TestCountUsersWithUsernamePrefix(t *testing.T) {
 	defer s.Close()
 
 	// Create some users with matching prefixes
-	s.Exec(`INSERT INTO users(email, username) VALUES(?, ?)`, "user1@example.com", "cesar")
-	s.Exec(`INSERT INTO users(email, username) VALUES(?, ?)`, "user2@example.com", "cesar1")
-	s.Exec(`INSERT INTO users(email, username) VALUES(?, ?)`, "user3@example.com", "cesar2")
-	s.Exec(`INSERT INTO users(email, username) VALUES(?, ?)`, "user4@example.com", "other")
+	s.Exec(`INSERT INTO edev_core_users(email, username) VALUES(?, ?)`, "user1@example.com", "cesar")
+	s.Exec(`INSERT INTO edev_core_users(email, username) VALUES(?, ?)`, "user2@example.com", "cesar1")
+	s.Exec(`INSERT INTO edev_core_users(email, username) VALUES(?, ?)`, "user3@example.com", "cesar2")
+	s.Exec(`INSERT INTO edev_core_users(email, username) VALUES(?, ?)`, "user4@example.com", "other")
 
 	// Count users with "cesar" prefix
 	count, err := s.CountUsersWithUsernamePrefix("cesar")
@@ -1671,7 +1672,7 @@ func TestGenerateUniqueUsername(t *testing.T) {
 	}
 
 	// Test 2: Create a user with this username
-	s.Exec(`INSERT INTO users(email, username) VALUES(?, ?)`, "user@example.com", "newname")
+	s.Exec(`INSERT INTO edev_core_users(email, username) VALUES(?, ?)`, "user@example.com", "newname")
 
 	// Test 3: Generate username again (should return numbered version)
 	username, err = s.GenerateUniqueUsername("newname")
@@ -2039,8 +2040,8 @@ func TestGetUserOrCreateByOAuthMultipleProvidersViaEmail(t *testing.T) {
 
 	// Step 4: Verify both identities are linked
 	var ghCount, twCount int
-	_ = s.QueryRow(`SELECT COUNT(*) FROM identities WHERE user_id = ? AND provider = ?`, u1.ID, "github").Scan(&ghCount)
-	_ = s.QueryRow(`SELECT COUNT(*) FROM identities WHERE user_id = ? AND provider = ?`, u1.ID, "twitter").Scan(&twCount)
+	_ = s.QueryRow(`SELECT COUNT(*) FROM edev_core_identities WHERE user_id = ? AND provider = ?`, u1.ID, "github").Scan(&ghCount)
+	_ = s.QueryRow(`SELECT COUNT(*) FROM edev_core_identities WHERE user_id = ? AND provider = ?`, u1.ID, "twitter").Scan(&twCount)
 
 	if ghCount != 1 || twCount != 1 {
 		t.Fatalf("expected both providers linked, got github=%d, twitter=%d", ghCount, twCount)
@@ -2237,7 +2238,7 @@ func TestStoreMagicLinkTokenValidation(t *testing.T) {
 
 	// Verify token was stored
 	var storedEmail string
-	_ = s.QueryRow(`SELECT email FROM magic_token WHERE token = ?`, token).Scan(&storedEmail)
+	_ = s.QueryRow(`SELECT email FROM edev_core_magic_token WHERE token = ?`, token).Scan(&storedEmail)
 
 	if storedEmail != email {
 		t.Fatalf("expected email %q, got %q", email, storedEmail)
@@ -2334,10 +2335,10 @@ func TestGenerateUniqueUsernameMultipleConflicts(t *testing.T) {
 	defer s.Close()
 
 	// Create users with numbered usernames
-	s.Exec(`INSERT INTO users(email, username) VALUES(?, ?)`, "u1@example.com", "alice")
-	s.Exec(`INSERT INTO users(email, username) VALUES(?, ?)`, "u2@example.com", "alice1")
-	s.Exec(`INSERT INTO users(email, username) VALUES(?, ?)`, "u3@example.com", "alice2")
-	s.Exec(`INSERT INTO users(email, username) VALUES(?, ?)`, "u4@example.com", "alice3")
+	s.Exec(`INSERT INTO edev_core_users(email, username) VALUES(?, ?)`, "u1@example.com", "alice")
+	s.Exec(`INSERT INTO edev_core_users(email, username) VALUES(?, ?)`, "u2@example.com", "alice1")
+	s.Exec(`INSERT INTO edev_core_users(email, username) VALUES(?, ?)`, "u3@example.com", "alice2")
+	s.Exec(`INSERT INTO edev_core_users(email, username) VALUES(?, ?)`, "u4@example.com", "alice3")
 
 	// Generate unique username should give alice4
 	username, err := s.GenerateUniqueUsername("alice")
@@ -2363,9 +2364,9 @@ func TestCountUsersWithUsernamePrefixEdgeCases(t *testing.T) {
 	}
 
 	// Create users and test case-insensitive matching
-	s.Exec(`INSERT INTO users(email, username) VALUES(?, ?)`, "u1@example.com", "Test")
-	s.Exec(`INSERT INTO users(email, username) VALUES(?, ?)`, "u2@example.com", "TEST1")
-	s.Exec(`INSERT INTO users(email, username) VALUES(?, ?)`, "u3@example.com", "test2")
+	s.Exec(`INSERT INTO edev_core_users(email, username) VALUES(?, ?)`, "u1@example.com", "Test")
+	s.Exec(`INSERT INTO edev_core_users(email, username) VALUES(?, ?)`, "u2@example.com", "TEST1")
+	s.Exec(`INSERT INTO edev_core_users(email, username) VALUES(?, ?)`, "u3@example.com", "test2")
 
 	// Count with lowercase should match all case variations
 	count, _ = s.CountUsersWithUsernamePrefix("test")
@@ -2398,7 +2399,7 @@ func TestStoreMagicLinkTokenDuplicateEmail(t *testing.T) {
 
 	// Both should exist
 	var count int
-	_ = s.QueryRow(`SELECT COUNT(*) FROM magic_token WHERE email = ?`, email).Scan(&count)
+	_ = s.QueryRow(`SELECT COUNT(*) FROM edev_core_magic_token WHERE email = ?`, email).Scan(&count)
 
 	if count != 2 {
 		t.Fatalf("expected 2 tokens for same email, got %d", count)
@@ -2424,7 +2425,7 @@ func TestPurgeExpiredMagicLinkTokensMultipleExpired(t *testing.T) {
 
 	// Verify initial state
 	var beforeCount int
-	_ = s.QueryRow(`SELECT COUNT(*) FROM magic_token`).Scan(&beforeCount)
+	_ = s.QueryRow(`SELECT COUNT(*) FROM edev_core_magic_token`).Scan(&beforeCount)
 	if beforeCount != 8 {
 		t.Fatalf("expected 8 tokens before purge, got %d", beforeCount)
 	}
@@ -2434,7 +2435,7 @@ func TestPurgeExpiredMagicLinkTokensMultipleExpired(t *testing.T) {
 
 	// Verify only valid tokens remain
 	var afterCount int
-	_ = s.QueryRow(`SELECT COUNT(*) FROM magic_token`).Scan(&afterCount)
+	_ = s.QueryRow(`SELECT COUNT(*) FROM edev_core_magic_token`).Scan(&afterCount)
 	if afterCount != 3 {
 		t.Fatalf("expected 3 tokens after purge, got %d", afterCount)
 	}
@@ -2660,5 +2661,389 @@ func TestGetUserByOAuthProviderIDNotFound(t *testing.T) {
 
 	if userID != 0 {
 		t.Fatalf("expected userID 0 for non-existent provider, got %d", userID)
+	}
+}
+
+// TestUpdateUserProfileUsernameValidationComprehensive tests comprehensive username validation scenarios.
+func TestUpdateUserProfileUsernameValidationComprehensive(t *testing.T) {
+	t.Parallel()
+	s := initTestDB(t)
+	defer s.Close()
+
+	tests := []struct {
+		name        string
+		setupUsers  []struct{ email, username string }
+		updateUser  int // index of user to update (0-based)
+		newUsername string
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name: "update_to_existing_username_exact_match",
+			setupUsers: []struct{ email, username string }{
+				{"user1@test.com", "alice"},
+				{"user2@test.com", "bob"},
+			},
+			updateUser:  1,
+			newUsername: "alice",
+			expectError: true,
+			errorMsg:    "already in use",
+		},
+		{
+			name: "update_to_existing_username_case_insensitive",
+			setupUsers: []struct{ email, username string }{
+				{"user1@test.com", "alice"},
+				{"user2@test.com", "bob"},
+			},
+			updateUser:  1,
+			newUsername: "ALICE",
+			expectError: true,
+			errorMsg:    "already in use",
+		},
+		{
+			name: "update_to_existing_username_mixed_case",
+			setupUsers: []struct{ email, username string }{
+				{"user1@test.com", "AlIcE"},
+				{"user2@test.com", "bob"},
+			},
+			updateUser:  1,
+			newUsername: "alice",
+			expectError: true,
+			errorMsg:    "already in use",
+		},
+		{
+			name: "update_to_same_username_should_succeed",
+			setupUsers: []struct{ email, username string }{
+				{"user1@test.com", "alice"},
+			},
+			updateUser:  0,
+			newUsername: "alice",
+			expectError: false,
+		},
+		{
+			name: "update_to_same_username_different_case_should_succeed",
+			setupUsers: []struct{ email, username string }{
+				{"user1@test.com", "alice"},
+			},
+			updateUser:  0,
+			newUsername: "ALICE",
+			expectError: false,
+		},
+		{
+			name: "update_to_unique_username_should_succeed",
+			setupUsers: []struct{ email, username string }{
+				{"user1@test.com", "alice"},
+				{"user2@test.com", "bob"},
+			},
+			updateUser:  1,
+			newUsername: "charlie",
+			expectError: false,
+		},
+		{
+			name: "three_users_conflict_scenario",
+			setupUsers: []struct{ email, username string }{
+				{"user1@test.com", "alice"},
+				{"user2@test.com", "bob"},
+				{"user3@test.com", "charlie"},
+			},
+			updateUser:  2,
+			newUsername: "BOB",
+			expectError: true,
+			errorMsg:    "already in use",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Clear database for this subtest
+			s.Exec("DELETE FROM edev_core_users")
+
+			// Setup users
+			var users []*User
+			for _, setup := range tt.setupUsers {
+				user, err := s.GetUserOrCreateByEmail(setup.email)
+				if err != nil {
+					t.Fatalf("Failed to create user %s: %v", setup.email, err)
+				}
+
+				// Set username if provided
+				if setup.username != "" {
+					user, err = s.UpdateUserProfile(user.ID, setup.username, "")
+					if err != nil {
+						t.Fatalf("Failed to set username %s for user %s: %v", setup.username, setup.email, err)
+					}
+				}
+				users = append(users, user)
+			}
+
+			// Perform the update test
+			targetUser := users[tt.updateUser]
+			_, err := s.UpdateUserProfile(targetUser.ID, tt.newUsername, "")
+
+			if tt.expectError {
+				if err == nil {
+					t.Fatalf("Expected error when updating username to '%s', got nil", tt.newUsername)
+				}
+				if !strings.Contains(err.Error(), tt.errorMsg) {
+					t.Fatalf("Expected error containing '%s', got: %v", tt.errorMsg, err)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("Expected no error when updating username to '%s', got: %v", tt.newUsername, err)
+				}
+			}
+		})
+	}
+}
+
+// TestGetUserOrCreateByOAuthInvalidUsername tests that invalid usernames from OAuth are treated as empty.
+func TestGetUserOrCreateByOAuthInvalidUsername(t *testing.T) {
+	t.Parallel()
+	s := initTestDB(t)
+	defer s.Close()
+
+	tests := []struct {
+		name            string
+		username        string
+		email           string
+		expectEmptyUser bool
+		expectEnabled   bool
+	}{
+		{
+			name:            "valid_username_should_be_used",
+			username:        "validuser",
+			email:           "valid@example.com",
+			expectEmptyUser: false,
+			expectEnabled:   true,
+		},
+		{
+			name:            "username_too_short_should_be_ignored",
+			username:        "ab",
+			email:           "short@example.com",
+			expectEmptyUser: true,
+			expectEnabled:   false,
+		},
+		{
+			name:            "username_too_long_should_be_ignored",
+			username:        "this_is_a_very_long_username_that_exceeds_30_characters",
+			email:           "long@example.com",
+			expectEmptyUser: true,
+			expectEnabled:   false,
+		},
+		{
+			name:            "username_with_spaces_should_be_ignored",
+			username:        "user name",
+			email:           "spaces@example.com",
+			expectEmptyUser: true,
+			expectEnabled:   false,
+		},
+		{
+			name:            "username_with_special_chars_should_be_ignored",
+			username:        "user@name",
+			email:           "special@example.com",
+			expectEmptyUser: true,
+			expectEnabled:   false,
+		},
+		{
+			name:            "username_with_unicode_should_be_ignored",
+			username:        "usuário",
+			email:           "unicode@example.com",
+			expectEmptyUser: true,
+			expectEnabled:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Clear database for this subtest
+			s.Exec("DELETE FROM edev_core_identities")
+			s.Exec("DELETE FROM edev_core_users")
+
+			// Create OAuth user
+			user, err := s.GetUserOrCreateByOAuth("github", "gh123", tt.email, tt.username, "")
+			if err != nil {
+				t.Fatalf("GetUserOrCreateByOAuth failed: %v", err)
+			}
+
+			// Check username behavior
+			if tt.expectEmptyUser {
+				if user.Username != "" {
+					t.Errorf("Expected empty username for invalid username '%s', got '%s'", tt.username, user.Username)
+				}
+			} else {
+				if user.Username == "" {
+					t.Errorf("Expected non-empty username for valid username '%s'", tt.username)
+				}
+			}
+
+			// Check enabled status
+			if user.Enabled != tt.expectEnabled {
+				t.Errorf("Expected enabled=%v, got enabled=%v", tt.expectEnabled, user.Enabled)
+			}
+
+			// Check email is preserved
+			if user.Email != tt.email {
+				t.Errorf("Expected email '%s', got '%s'", tt.email, user.Email)
+			}
+		})
+	}
+}
+
+// TestMergeOAuthProfileDataInvalidUsername tests that invalid usernames are ignored during profile merge.
+func TestMergeOAuthProfileDataInvalidUsername(t *testing.T) {
+	t.Parallel()
+	s := initTestDB(t)
+	defer s.Close()
+
+	// Create initial user with email but no username
+	user, err := s.GetUserOrCreateByEmail("test@example.com")
+	if err != nil {
+		t.Fatalf("GetUserOrCreateByEmail failed: %v", err)
+	}
+
+	tests := []struct {
+		name           string
+		oauthUsername  string
+		expectUsername string
+		expectEnabled  bool
+	}{
+		{
+			name:           "valid_username_should_be_merged",
+			oauthUsername:  "validuser",
+			expectUsername: "validuser",
+			expectEnabled:  true,
+		},
+		{
+			name:           "invalid_username_should_be_ignored",
+			oauthUsername:  "a",
+			expectUsername: "",
+			expectEnabled:  false,
+		},
+		{
+			name:           "username_with_special_chars_should_be_ignored",
+			oauthUsername:  "user@name",
+			expectUsername: "",
+			expectEnabled:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Reset user to initial state (email only, no username)
+			s.Exec("UPDATE edev_core_users SET username = '', enabled = 0 WHERE id = ?", user.ID)
+
+			// Merge OAuth profile data
+			updatedUser, err := s.MergeOAuthProfileData(user.ID, tt.oauthUsername, "")
+			if err != nil {
+				t.Fatalf("MergeOAuthProfileData failed: %v", err)
+			}
+
+			// Check username behavior
+			if updatedUser.Username != tt.expectUsername {
+				t.Errorf("Expected username '%s', got '%s'", tt.expectUsername, updatedUser.Username)
+			}
+
+			// Check enabled status
+			if updatedUser.Enabled != tt.expectEnabled {
+				t.Errorf("Expected enabled=%v, got enabled=%v", tt.expectEnabled, updatedUser.Enabled)
+			}
+		})
+	}
+}
+
+// TestCreateMinimalUserForOAuthFallback verifies that minimal fallback users
+// can be created when OAuth signup fails.
+func TestCreateMinimalUserForOAuthFallback(t *testing.T) {
+	t.Parallel()
+
+	s := initTestDB(t)
+	defer s.Close()
+
+	tests := []struct {
+		name        string
+		email       string
+		avatarURL   string
+		expectError bool
+		expectID    bool
+	}{
+		{
+			name:        "valid_email_should_create_user",
+			email:       "user@example.com",
+			avatarURL:   "https://example.com/avatar.jpg",
+			expectError: false,
+			expectID:    true,
+		},
+		{
+			name:        "valid_email_without_avatar",
+			email:       "user2@example.com",
+			avatarURL:   "",
+			expectError: false,
+			expectID:    true,
+		},
+		{
+			name:        "empty_email_should_error",
+			email:       "",
+			avatarURL:   "https://example.com/avatar.jpg",
+			expectError: true,
+			expectID:    false,
+		},
+		{
+			name:        "whitespace_email_should_error",
+			email:       "   ",
+			avatarURL:   "",
+			expectError: true,
+			expectID:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			user, err := s.CreateMinimalUserForOAuthFallback(tt.email, tt.avatarURL)
+
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("Expected error, got nil")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("Expected no error, got: %v", err)
+				return
+			}
+
+			if tt.expectID && user.ID == 0 {
+				t.Errorf("Expected user ID > 0, got 0")
+			}
+
+			// Verify user is created with empty username
+			if user.Username != "" {
+				t.Errorf("Expected empty username, got %q", user.Username)
+			}
+
+			// Verify user is not enabled
+			if user.Enabled {
+				t.Errorf("Expected enabled=false, got enabled=true")
+			}
+
+			// Verify email is set
+			if user.Email != tt.email {
+				t.Errorf("Expected email %q, got %q", tt.email, user.Email)
+			}
+
+			// Verify avatar URL is set
+			if user.AvatarURL != tt.avatarURL {
+				t.Errorf("Expected avatar_url %q, got %q", tt.avatarURL, user.AvatarURL)
+			}
+
+			// Verify user can be retrieved from database
+			retrievedUser, err := s.GetUserByID(user.ID)
+			if err != nil {
+				t.Errorf("Failed to retrieve created user: %v", err)
+			}
+			if retrievedUser.ID != user.ID {
+				t.Errorf("Retrieved user has different ID: expected %d, got %d", user.ID, retrievedUser.ID)
+			}
+		})
 	}
 }

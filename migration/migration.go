@@ -5,6 +5,7 @@ import (
 	"embed"
 	"fmt"
 	"io/fs"
+	"strings"
 
 	"edev/db"
 	"edev/log"
@@ -71,6 +72,37 @@ func findMigrationFile(fsys fs.FS, version int) (string, error) {
 	}
 
 	if len(matches) > 1 {
+		// If multiple matches exist, prefer a file that has non-empty, non-comment content.
+		// This allows deprecating a migration by leaving an empty/comment-only file with same version.
+		nonEmpty := make([]string, 0, len(matches))
+		for _, m := range matches {
+			b, rerr := fs.ReadFile(fsys, m)
+			if rerr != nil {
+				// If we cannot read, treat as non-empty to avoid false negatives
+				nonEmpty = append(nonEmpty, m)
+				continue
+			}
+			content := strings.TrimSpace(string(b))
+			// Strip out leading comment lines
+			lines := strings.Split(content, "\n")
+			filtered := make([]string, 0, len(lines))
+			for _, ln := range lines {
+				s := strings.TrimSpace(ln)
+				if s == "" {
+					continue
+				}
+				if strings.HasPrefix(s, "--") {
+					continue
+				}
+				filtered = append(filtered, s)
+			}
+			if len(filtered) > 0 {
+				nonEmpty = append(nonEmpty, m)
+			}
+		}
+		if len(nonEmpty) == 1 {
+			return nonEmpty[0], nil
+		}
 		return "", fmt.Errorf(
 			"multiple migration files matched pattern %q for version %03d: %v",
 			pattern,
@@ -119,15 +151,32 @@ func Run() error {
 		return fmt.Errorf("failed to get max migration version: %w", err)
 	}
 
-	maxNFiles := len(files)
-	if maxVersion >= maxNFiles {
+	// Determine the highest migration version from filenames to avoid duplicate version files
+	highestVersion := 0
+	for _, de := range files {
+		name := de.Name()
+		if !strings.HasSuffix(name, ".up.sql") {
+			continue
+		}
+		if len(name) < 7 { // e.g., 001_x.up.sql
+			continue
+		}
+		numStr := name[:3]
+		var v int
+		_, perr := fmt.Sscanf(numStr, "%03d", &v)
+		if perr == nil && v > highestVersion {
+			highestVersion = v
+		}
+	}
+
+	if maxVersion >= highestVersion {
 		log.Printf("no new migrations to apply (current version: %d)", maxVersion)
 		return tx.Commit()
 	}
 
-	log.Printf("applying migrations from version %d to %d", maxVersion+1, maxNFiles)
+	log.Printf("applying migrations from version %d to %d", maxVersion+1, highestVersion)
 
-	for i := maxVersion + 1; i <= maxNFiles; i++ {
+	for i := maxVersion + 1; i <= highestVersion; i++ {
 		filename, err := findMigrationFile(filesystem, i)
 		if err != nil {
 			return fmt.Errorf("failed to locate migration for version %d: %w", i, err)

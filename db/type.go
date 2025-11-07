@@ -7,7 +7,6 @@ type File struct {
 	UserID           int64
 	OriginalFilename string
 	Filename         string
-	Filepath         string
 	Filesize         int64
 	Filetype         string
 	Filehash         string

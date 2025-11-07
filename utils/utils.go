@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"io"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"edev/log"
@@ -97,4 +98,16 @@ func MakePKCE() (verifier, challenge string) {
 	sum := sha256.Sum256([]byte(verifier))
 	challenge = b64urlNoPad(sum[:])
 	return
+}
+
+func ParseIntWithDefault(s string, def int) int {
+	if s == "" {
+		return def
+	}
+	var v int
+	v, err := strconv.Atoi(s)
+	if err != nil {
+		return def
+	}
+	return v
 }

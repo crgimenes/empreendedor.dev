@@ -17,33 +17,13 @@
             </div>
           {{end}}
           
-          {{if .Authed}}
-            <div class="card">
-              <div class="card-body">
-                <h1 class="card-title">Bem-vindo, {{.User.Username}}!</h1>
-                <p class="card-text text-muted">Email: {{.User.Email}}</p>
-                {{if .User.AvatarURL}}
-                  <img src="{{.User.AvatarURL}}" alt="Avatar" class="img-thumbnail mb-3" style="max-width: 150px;">
-                {{end}}
-                <p class="mb-3">
-                  {{if .User.Enabled}}
-                    <span class="badge bg-success">Conta Ativa</span>
-                  {{else}}
-                    <span class="badge bg-warning">Conta Incompleta</span>
-                  {{end}}
-                </p>
-                <a href="/me" class="btn btn-primary">Editar Perfil</a>
-              </div>
+          <div class="card">
+            <div class="card-body text-center">
+              <h1 class="card-title mb-4">Bem-vindo ao empreendedor.dev</h1>
+              <p class="card-text mb-4">Conecte-se com sua conta para continuar.</p>
+              <a href="/login" class="btn btn-primary btn-lg">Ir para Login</a>
             </div>
-          {{else}}
-            <div class="card">
-              <div class="card-body text-center">
-                <h1 class="card-title mb-4">Bem-vindo ao Empreendedor.dev</h1>
-                <p class="card-text mb-4">Conecte-se com sua conta para continuar.</p>
-                <a href="/login" class="btn btn-primary btn-lg">Ir para Login</a>
-              </div>
-            </div>
-          {{end}}
+          </div>
         </div>
       </div>
     </main>

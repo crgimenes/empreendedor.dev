@@ -138,8 +138,20 @@ func (p DiscordProvider) CallbackHandler(w http.ResponseWriter, r *http.Request)
 		username,
 		avatarURL)
 	if err != nil {
-		http.Error(w, "get/create user failed: "+err.Error(), http.StatusInternalServerError)
-		return
+		log.Printf("GetUserOrCreateByOAuth failed: %v; attempting fallback user creation", err)
+		// If creation fails, attempt to create minimal user with email only for profile completion
+		if email != "" {
+			u, err = db.Storage.CreateMinimalUserForOAuthFallback(email, avatarURL)
+			if err != nil {
+				log.Printf("CreateMinimalUserForOAuthFallback failed: %v", err)
+				http.Error(w, "user creation failed: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+			log.Printf("created minimal fallback user with email %s", email)
+		} else {
+			http.Error(w, "user creation failed: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 
 	sid := utils.NewOpaqueID()

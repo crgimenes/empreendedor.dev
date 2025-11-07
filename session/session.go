@@ -6,6 +6,9 @@ In-memory session store (opaque SID -> db.User).
 
 import (
 	"bytes"
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/base64"
 	"encoding/gob"
 	"log"
 	"net/http"
@@ -339,4 +342,62 @@ func GetCookie(r *http.Request) (string, bool) {
 		return "", false
 	}
 	return c.Value, true
+}
+
+// ===== CSRF helpers =====
+
+const (
+	secureCSRFCookieName   = "__Host-csrf"
+	insecureCSRFCookieName = "csrf"
+)
+
+// GenerateCSRFToken returns an existing CSRF token from cookie or creates a new one and sets the cookie.
+// Double-submit cookie pattern: the same token is also sent back in a hidden form field named "csrf_token".
+func GenerateCSRFToken(w http.ResponseWriter, r *http.Request) string {
+	name := secureCSRFCookieName
+	secure := !insecureCookie
+	if !secure {
+		name = insecureCSRFCookieName
+	}
+
+	if c, err := r.Cookie(name); err == nil && c.Value != "" {
+		return c.Value
+	}
+
+	// Generate 32 random bytes, base64url without padding
+	buf := make([]byte, 32)
+	_, _ = rand.Read(buf)
+	token := base64.RawURLEncoding.EncodeToString(buf)
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     name,
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   int((24 * time.Hour).Seconds()),
+		Expires:  time.Now().Add(24 * time.Hour),
+	})
+	return token
+}
+
+// ValidateCSRF compares the CSRF cookie with the form field "csrf_token" using constant-time compare.
+func ValidateCSRF(r *http.Request) bool {
+	name := secureCSRFCookieName
+	if insecureCookie {
+		name = insecureCSRFCookieName
+	}
+	c, err := r.Cookie(name)
+	if err != nil || c.Value == "" {
+		return false
+	}
+	formToken := r.FormValue("csrf_token")
+	if formToken == "" {
+		return false
+	}
+	if subtle.ConstantTimeCompare([]byte(c.Value), []byte(formToken)) != 1 {
+		return false
+	}
+	return true
 }

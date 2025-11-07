@@ -5,7 +5,7 @@
 -- - CURRENT_TIMESTAMP yields UTC "YYYY-MM-DD HH:MM:SS" in SQLite.
 -- - Foreign keys require PRAGMA foreign_keys=ON (enabled in driver DSN).
 
-CREATE TABLE IF NOT EXISTS users (
+CREATE TABLE IF NOT EXISTS edev_core_users (
     id INTEGER PRIMARY KEY,
     reference_id TEXT NOT NULL UNIQUE DEFAULT "", -- a trigger will set this to a UUID
     username TEXT UNIQUE COLLATE NOCASE,
@@ -16,16 +16,16 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_users_username_nocase
-    ON users(LOWER(username)) WHERE username IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_users_email_nocase
-    ON users(LOWER(email)) WHERE email IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_users_enabled ON users(enabled);
-CREATE INDEX IF NOT EXISTS idx_users_reference_id ON users(reference_id);
+CREATE INDEX IF NOT EXISTS idx_edev_core_users_username_nocase
+    ON edev_core_users(LOWER(username)) WHERE username IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_edev_core_users_email_nocase
+    ON edev_core_users(LOWER(email)) WHERE email IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_edev_core_users_enabled ON edev_core_users(enabled);
+CREATE INDEX IF NOT EXISTS idx_edev_core_users_reference_id ON edev_core_users(reference_id);
 
-CREATE TABLE IF NOT EXISTS identities (
+CREATE TABLE IF NOT EXISTS edev_core_identities (
     id INTEGER PRIMARY KEY,
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES edev_core_users(id) ON DELETE CASCADE,
     provider TEXT NOT NULL,
     provider_uid TEXT NOT NULL,
     avatar_url TEXT,
@@ -34,24 +34,24 @@ CREATE TABLE IF NOT EXISTS identities (
     UNIQUE(provider, provider_uid)
 );
 
-CREATE INDEX IF NOT EXISTS idx_identities_user_id ON identities(user_id);
+CREATE INDEX IF NOT EXISTS idx_edev_core_identities_user_id ON edev_core_identities(user_id);
 
-CREATE TRIGGER IF NOT EXISTS users_set_updated_at
-AFTER UPDATE OF username, email, enabled, avatar_url ON users
+CREATE TRIGGER IF NOT EXISTS edev_core_users_set_updated_at
+AFTER UPDATE OF username, email, enabled, avatar_url ON edev_core_users
 BEGIN
-    UPDATE users SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
+    UPDATE edev_core_users SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
 END;
 
-CREATE TRIGGER IF NOT EXISTS identities_set_updated_at
-AFTER UPDATE OF user_id, provider, provider_uid, avatar_url ON identities
+CREATE TRIGGER IF NOT EXISTS edev_core_identities_set_updated_at
+AFTER UPDATE OF user_id, provider, provider_uid, avatar_url ON edev_core_identities
 BEGIN
-    UPDATE identities SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
+    UPDATE edev_core_identities SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
 END;
 
-CREATE TRIGGER IF NOT EXISTS users_reference_uuid
-AFTER INSERT ON users
+CREATE TRIGGER IF NOT EXISTS edev_core_users_reference_uuid
+AFTER INSERT ON edev_core_users
 BEGIN
-  UPDATE users
+  UPDATE edev_core_users
   SET reference_id = ( 
     select substr(u,1,8)||'-'|| 
     substr(u,9,4)||'-4'|| 
@@ -67,7 +67,7 @@ END;
 
 --
 
-CREATE TABLE IF NOT EXISTS magic_token (
+CREATE TABLE IF NOT EXISTS edev_core_magic_token (
     id INTEGER PRIMARY KEY,
     email TEXT NOT NULL,
     token TEXT NOT NULL UNIQUE,
@@ -78,12 +78,11 @@ CREATE TABLE IF NOT EXISTS magic_token (
 
 --
 
-CREATE TABLE IF NOT EXISTS filemanager_files (
+CREATE TABLE IF NOT EXISTS edev_core_filemanager_files (
     id INTEGER PRIMARY KEY,
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, -- owner of the file
+    user_id INTEGER NOT NULL REFERENCES edev_core_users(id) ON DELETE CASCADE, -- owner of the file
     original_filename TEXT NOT NULL,
     filename TEXT NOT NULL UNIQUE,
-    filepath TEXT NOT NULL,
     filesize INTEGER NOT NULL, -- in bytes
     filetype TEXT,
     filehash TEXT, -- e.g. SHA256 hash of the file
@@ -94,12 +93,12 @@ CREATE TABLE IF NOT EXISTS filemanager_files (
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_filemanager_files_user_id ON filemanager_files(user_id);
+CREATE INDEX IF NOT EXISTS idx_edev_core_filemanager_files_user_id ON edev_core_filemanager_files(user_id);
 
-CREATE TRIGGER IF NOT EXISTS filemanager_files_set_updated_at
-AFTER UPDATE OF original_filename, filename, filepath, filesize, filetype, filehash, filetag, filedescription, processed ON filemanager_files
+CREATE TRIGGER IF NOT EXISTS edev_core_filemanager_files_set_updated_at
+AFTER UPDATE OF original_filename, filename, filesize, filetype, filehash, filetag, filedescription, processed ON edev_core_filemanager_files
 BEGIN
-    UPDATE filemanager_files SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
+    UPDATE edev_core_filemanager_files SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
 END;
 
 

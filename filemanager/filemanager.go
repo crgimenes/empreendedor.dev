@@ -193,14 +193,58 @@ func ValidateFile(
 		return "", size, ErrorFileRead
 	}
 
-	// Detect MIME type
-	typeDetected = http.DetectContentType(buf)
-	if !slices.Contains(acceptedTypes, typeDetected) {
-		log.Println("Invalid file type detected:", typeDetected)
-		return typeDetected, size, ErrorInvalidFileType
+	// Detect MIME type (sniff) and normalize common aliases
+	sniffed := http.DetectContentType(buf)
+	sniffed = strings.ToLower(sniffed)
+	// Canonicalize a few common audio aliases
+	switch sniffed {
+	case "audio/x-wav", "audio/wave", "audio/vnd.wave":
+		sniffed = "audio/wav"
+	case "audio/mp3", "audio/x-mp3", "audio/mpeg3":
+		sniffed = "audio/mpeg"
 	}
 
-	return typeDetected, size, nil
+	// Accept if sniffed matches the accepted list
+	if slices.Contains(acceptedTypes, sniffed) {
+		return sniffed, size, nil
+	}
+
+	// If sniffing fell back to generic type, use extension mapping as a safe fallback
+	if sniffed == "application/octet-stream" || sniffed == "binary/octet-stream" || sniffed == "text/plain; charset=utf-8" {
+		// Map known extensions to canonical MIME types, but only for extensions explicitly allowed
+		extToMIME := map[string]string{
+			// images
+			"jpg":  "image/jpeg",
+			"jpeg": "image/jpeg",
+			"png":  "image/png",
+			"gif":  "image/gif",
+			"webp": "image/webp",
+			// videos
+			"mp4":  "video/mp4",
+			"webm": "video/webm",
+			"ogv":  "video/ogg",
+			// audio
+			"mp3": "audio/mpeg",
+			"wav": "audio/wav",
+			"oga": "audio/ogg",
+			"ogg": "audio/ogg",
+			"m4a": "audio/mp4",
+		}
+		if m, ok := extToMIME[ext]; ok && slices.Contains(acceptedTypes, m) {
+			return m, size, nil
+		}
+	}
+
+	// As a last attempt, check if removing vendor prefix (x-) would match
+	if strings.Contains(sniffed, "/x-") {
+		canonical := strings.Replace(sniffed, "/x-", "/", 1)
+		if slices.Contains(acceptedTypes, canonical) {
+			return canonical, size, nil
+		}
+	}
+
+	log.Println("Invalid file type detected:", sniffed)
+	return sniffed, size, ErrorInvalidFileType
 }
 
 func ValidateFilename(filename string) error {
@@ -266,6 +310,60 @@ func DataFilePath(u *db.User) (string, error) {
 	return absPath, nil
 }
 
+// MakeRelativeToDataPath converts an absolute file path under Config.DataPath
+// into a path relative to Config.DataPath. If the input path is already
+// relative, it is returned unchanged. If the path is absolute but does not
+// reside under Config.DataPath, the original path is returned.
+func MakeRelativeToDataPath(p string) (string, error) {
+	if p == "" {
+		return "", nil
+	}
+	// Already relative
+	if !filepath.IsAbs(p) {
+		return filepath.Clean(p), nil
+	}
+	base := config.Cfg.DataPath
+	// Normalize base to absolute if needed
+	if strings.HasPrefix(base, "./") {
+		absBase, err := filepath.Abs(base)
+		if err != nil {
+			return "", err
+		}
+		base = absBase
+	}
+	// Compute relative path
+	rel, err := filepath.Rel(base, p)
+	if err != nil {
+		return "", err
+	}
+	// If rel starts with "..", p is not under base; keep original absolute
+	if strings.HasPrefix(rel, "..") {
+		return filepath.Clean(p), nil
+	}
+	return filepath.Clean(rel), nil
+}
+
+// ResolveAbsoluteFromDataPath returns an absolute path for a stored file path.
+// If the provided path is absolute, it is returned as-is. If it is relative,
+// it will be joined with Config.DataPath and cleaned.
+func ResolveAbsoluteFromDataPath(p string) (string, error) {
+	if p == "" {
+		return "", nil
+	}
+	if filepath.IsAbs(p) {
+		return filepath.Clean(p), nil
+	}
+	base := config.Cfg.DataPath
+	if strings.HasPrefix(base, "./") {
+		absBase, err := filepath.Abs(base)
+		if err != nil {
+			return "", err
+		}
+		base = absBase
+	}
+	return filepath.Clean(filepath.Join(base, p)), nil
+}
+
 // FileName generates random file name
 func FileName() string {
 	return utils.NewOpaqueIDShort()
@@ -289,4 +387,16 @@ func FileHash(file multipart.File) (string, error) {
 
 	sum := hash.Sum(nil)
 	return hex.EncodeToString(sum), nil
+}
+
+func ListFilesByUserID(userID int64, offset, limit int) ([]*db.File, error) {
+	return db.Storage.ListFilesByUserID(userID, offset, limit)
+}
+
+func SearchFilesByUserIDFTS(userID int64, query, sort string, offset, limit int) ([]*db.File, error) {
+	return db.Storage.SearchFilesByUserIDFTS(userID, query, sort, offset, limit)
+}
+
+func ListFilesByUserIDSorted(userID int64, sort string, offset, limit int) ([]*db.File, error) {
+	return db.Storage.ListFilesByUserIDSorted(userID, sort, offset, limit)
 }

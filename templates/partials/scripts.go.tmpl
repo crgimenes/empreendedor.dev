@@ -1,5 +1,9 @@
 {{define "scripts"}}
-<script defer src="/assets/bootstrap/js/bootstrap.bundle.min.js"></script>
-<script defer src="/assets/events.js?v={{.Config.GitTag}}"></script>
+<script defer src="/assets/bootstrap/js/bootstrap.bundle.min.js?v={{ .Config.GitTag }}"></script>
+
+{{/* Load SSE client only for authenticated and enabled users to avoid unnecessary connections */}}
+{{ if and .Authed .User.Enabled }}
+<script defer src="/assets/events.js?v={{ .Config.GitTag }}"></script>
+{{ end }}
 {{end}}
 

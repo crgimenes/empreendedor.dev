@@ -3,10 +3,18 @@ package templates
 import (
 	"html/template"
 	"log"
+	"strings"
 )
 
 func loadTemplates() *template.Template {
-	tpl, err := template.ParseFS(
+	// Register small helper functions for templates
+	funcMap := template.FuncMap{
+		"split": strings.Split,
+		"trim":  strings.TrimSpace,
+	}
+
+	base := template.New("").Funcs(funcMap)
+	tpl, err := base.ParseFS(
 		filesystem,
 		"*.go.tmpl",
 		"partials/*.go.tmpl",

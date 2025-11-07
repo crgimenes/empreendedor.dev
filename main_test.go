@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -33,6 +35,84 @@ func init() {
 	session.EnableInsecureCookie()
 }
 
+// initTestDBForHandler initializes a test database with proper schema for handler tests
+func initTestDBForHandler(t *testing.T) *db.SQLite {
+	t.Helper()
+
+	tempDir := t.TempDir()
+	tempDB := tempDir + "/test.db"
+
+	testDB, err := db.NewWithPath(tempDB)
+	if err != nil {
+		t.Fatalf("failed to create test database: %v", err)
+	}
+
+	// Create schema - using simplified statements that work with single Exec calls
+	statements := []string{
+		`CREATE TABLE IF NOT EXISTS edev_core_users (
+			id INTEGER PRIMARY KEY,
+			reference_id TEXT NOT NULL UNIQUE DEFAULT "",
+			username TEXT UNIQUE COLLATE NOCASE,
+			email TEXT UNIQUE COLLATE NOCASE,
+			enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0,1)),
+			avatar_url TEXT,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_edev_core_users_username_nocase
+			ON edev_core_users(LOWER(username)) WHERE username IS NOT NULL`,
+		`CREATE INDEX IF NOT EXISTS idx_edev_core_users_email_nocase
+			ON edev_core_users(LOWER(email)) WHERE email IS NOT NULL`,
+		`CREATE INDEX IF NOT EXISTS idx_edev_core_users_enabled ON edev_core_users(enabled)`,
+		`CREATE INDEX IF NOT EXISTS idx_edev_core_users_reference_id ON edev_core_users(reference_id)`,
+		`CREATE TABLE IF NOT EXISTS edev_core_identities (
+			id INTEGER PRIMARY KEY,
+			user_id INTEGER NOT NULL REFERENCES edev_core_users(id) ON DELETE CASCADE,
+			provider TEXT NOT NULL,
+			provider_uid TEXT NOT NULL,
+			avatar_url TEXT,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(provider, provider_uid)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_edev_core_identities_user_id ON edev_core_identities(user_id)`,
+		`CREATE TRIGGER IF NOT EXISTS edev_core_users_set_updated_at
+		AFTER UPDATE OF username, email, enabled, avatar_url ON edev_core_users
+		BEGIN
+			UPDATE edev_core_users SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
+		END`,
+		`CREATE TRIGGER IF NOT EXISTS edev_core_identities_set_updated_at
+		AFTER UPDATE OF user_id, provider, provider_uid, avatar_url ON edev_core_identities
+		BEGIN
+			UPDATE edev_core_identities SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
+		END`,
+		`CREATE TRIGGER IF NOT EXISTS edev_core_users_reference_uuid
+		AFTER INSERT ON edev_core_users
+		BEGIN
+		  UPDATE edev_core_users
+		  SET reference_id = (
+			select substr(u,1,8)||'-'||
+			substr(u,9,4)||'-4'||
+			substr(u,13,3)||'-'||v||
+			substr(u,17,3)||'-'||
+			substr(u,21,12) from (
+				select
+					lower(hex(randomblob(16))) as u,
+					substr('89ab',abs(random()) % 4 + 1, 1) as v)
+			)
+		  WHERE id = NEW.id;
+		END`,
+	}
+
+	for _, stmt := range statements {
+		if err := testDB.Exec(stmt); err != nil {
+			t.Fatalf("failed to execute statement: %v\nStatement: %s", err, stmt)
+		}
+	}
+
+	return testDB
+}
+
 // setSessionCookie adds a session cookie to a request
 func setSessionCookie(r *http.Request, sid string) {
 	c := &http.Cookie{
@@ -55,16 +135,21 @@ func TestIndexHandlerNotAuthenticated(t *testing.T) {
 	}
 
 	body := w.Body.String()
-	if !strings.Contains(body, "Bem-vindo ao Empreendedor.dev") {
+	if !strings.Contains(body, "Bem-vindo ao empreendedor.dev") {
 		t.Fatalf("expected welcome message in body, got: %s", body)
 	}
 
 	if !strings.Contains(body, "Ir para Login") {
 		t.Fatalf("expected login button in body")
 	}
+
+	// Verify that index template is used (not dashboard)
+	if !strings.Contains(body, "Conecte-se com sua conta para continuar") {
+		t.Fatalf("expected index template content for unauthenticated users")
+	}
 }
 
-// TestIndexHandlerAuthenticated tests the index page for authenticated users
+// TestIndexHandlerAuthenticated tests the index page for authenticated users (should show dashboard)
 func TestIndexHandlerAuthenticated(t *testing.T) {
 	// Create a test user and session
 	testUser := db.User{
@@ -95,6 +180,15 @@ func TestIndexHandlerAuthenticated(t *testing.T) {
 
 	if !strings.Contains(body, "test@example.com") {
 		t.Fatalf("expected email in body")
+	}
+
+	// Verify that dashboard template is used (shows user details and edit profile link)
+	if !strings.Contains(body, "Editar Perfil") {
+		t.Fatalf("expected dashboard template content for authenticated users")
+	}
+
+	if !strings.Contains(body, "Conta Ativa") {
+		t.Fatalf("expected account status in dashboard")
 	}
 }
 
@@ -306,6 +400,146 @@ func TestTemplatesParseCorrectly(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected template rendering to succeed, got status %d", w.Code)
+	}
+}
+
+// TestMeHandlerPOSTUsernameConflict tests the me handler POST with username conflict
+func TestMeHandlerPOSTUsernameConflict(t *testing.T) {
+	// Initialize test database
+	testDB := initTestDBForHandler(t)
+	defer testDB.Close()
+
+	// Set up global storage for the handler to use
+	originalStorage := db.Storage
+	db.Storage = testDB
+	defer func() { db.Storage = originalStorage }()
+
+	// Create first user with username "alice"
+	user1, err := db.Storage.GetUserOrCreateByEmail("alice@test.com")
+	if err != nil {
+		t.Fatalf("failed to create first user: %v", err)
+	}
+	_, err = db.Storage.UpdateUserProfile(user1.ID, "alice", "")
+	if err != nil {
+		t.Fatalf("failed to set username for first user: %v", err)
+	}
+
+	// Create second user
+	user2, err := db.Storage.GetUserOrCreateByEmail("bob@test.com")
+	if err != nil {
+		t.Fatalf("failed to create second user: %v", err)
+	}
+	_, err = db.Storage.UpdateUserProfile(user2.ID, "bob", "")
+	if err != nil {
+		t.Fatalf("failed to set username for second user: %v", err)
+	}
+
+	// Create session for second user
+	sid := utils.NewOpaqueID()
+	session.Put(sid, *user2)
+
+	// Create POST request trying to update username to "alice" (conflict)
+	var requestBody bytes.Buffer
+	writer := multipart.NewWriter(&requestBody)
+	writer.WriteField("username", "alice")
+	writer.WriteField("avatar_url", "")
+	writer.Close()
+
+	req := httptest.NewRequest("POST", "/me", &requestBody)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	setSessionCookie(req, sid)
+
+	w := httptest.NewRecorder()
+
+	// Call handler
+	meHandler(w, req)
+
+	// Should return 200 (re-rendered form with error)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200 (form with error), got %d", w.Code)
+	}
+
+	// Check that response contains error message
+	body := w.Body.String()
+	if !strings.Contains(body, "already in use") {
+		t.Fatalf("expected error message 'already in use' in response body")
+	}
+
+	// Check that the form is re-rendered (contains the form elements)
+	if !strings.Contains(body, "form method=\"POST\"") {
+		t.Fatalf("expected form to be re-rendered in response")
+	}
+
+	// Verify that user2's username is still "bob" (unchanged)
+	updatedUser2, err := db.Storage.GetUserByID(user2.ID)
+	if err != nil {
+		t.Fatalf("failed to get updated user2: %v", err)
+	}
+	if updatedUser2.Username != "bob" {
+		t.Fatalf("expected user2 username to remain 'bob', got '%s'", updatedUser2.Username)
+	}
+}
+
+// TestMeHandlerPOSTUsernameConflictCaseInsensitive tests case-insensitive username conflict
+func TestMeHandlerPOSTUsernameConflictCaseInsensitive(t *testing.T) {
+	// Initialize test database
+	testDB := initTestDBForHandler(t)
+	defer testDB.Close()
+
+	// Set up global storage for the handler to use
+	originalStorage := db.Storage
+	db.Storage = testDB
+	defer func() { db.Storage = originalStorage }()
+
+	// Create first user with username "alice"
+	user1, err := db.Storage.GetUserOrCreateByEmail("alice@test.com")
+	if err != nil {
+		t.Fatalf("failed to create first user: %v", err)
+	}
+	_, err = db.Storage.UpdateUserProfile(user1.ID, "alice", "")
+	if err != nil {
+		t.Fatalf("failed to set username for first user: %v", err)
+	}
+
+	// Create second user
+	user2, err := db.Storage.GetUserOrCreateByEmail("bob@test.com")
+	if err != nil {
+		t.Fatalf("failed to create second user: %v", err)
+	}
+	_, err = db.Storage.UpdateUserProfile(user2.ID, "bob", "")
+	if err != nil {
+		t.Fatalf("failed to set username for second user: %v", err)
+	}
+
+	// Create session for second user
+	sid := utils.NewOpaqueID()
+	session.Put(sid, *user2)
+
+	// Create POST request trying to update username to "ALICE" (case-insensitive conflict)
+	var requestBody2 bytes.Buffer
+	writer2 := multipart.NewWriter(&requestBody2)
+	writer2.WriteField("username", "ALICE")
+	writer2.WriteField("avatar_url", "")
+	writer2.Close()
+
+	req := httptest.NewRequest("POST", "/me", &requestBody2)
+	req.Header.Set("Content-Type", writer2.FormDataContentType())
+	setSessionCookie(req, sid)
+
+	w := httptest.NewRecorder()
+
+	// Call handler
+	meHandler(w, req)
+
+	// Should return 200 (re-rendered form with error)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200 (form with error), got %d", w.Code)
+	}
+
+	// Check that response contains error message
+	body := w.Body.String()
+	if !strings.Contains(body, "already in use") {
+		t.Fatalf("expected error message 'already in use' in response body")
 	}
 }
 

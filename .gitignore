@@ -42,3 +42,51 @@ empreendedor.dev-linux-amd64
 data/*
 nonfree
 
+# Sensitive credentials
+*.env
+*.env.local
+*.env.*.local
+.env
+.env.local
+.env.test
+.env.production
+
+# Private keys and certificates
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.jks
+*.keystore
+
+# Credentials files
+*credentials*
+*secret*
+*oauth*config*
+*.json.secret
+
+# API keys and tokens
+*api_key*
+*access_token*
+*refresh_token*
+
+# Database files with data
+*.db-wal
+*.db-shm
+edev.db
+
+# Session files
+sessions.gob
+
+# Local config overrides
+init.local.lua
+config.local.lua
+
+# IDE and OS
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
