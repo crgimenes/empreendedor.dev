@@ -1447,6 +1447,11 @@ func fileHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if fileMeta == nil {
+		http.Error(w, "file not found", http.StatusNotFound)
+		return
+	}
+
 	if strings.TrimSpace(fileMeta.Filehash) == "" {
 		log.Printf("invariant violation: empty filehash for id=%d", fileMeta.ID)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
