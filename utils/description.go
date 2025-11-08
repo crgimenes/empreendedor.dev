@@ -21,6 +21,10 @@ func SanitizeDescription(in string) string {
 	var b strings.Builder
 	b.Grow(len(s))
 	for _, r := range s {
+		if r == '\n' || r == '\t' {
+			b.WriteRune(r)
+			continue
+		}
 		if unicode.Is(unicode.Cc, r) || unicode.Is(unicode.Cf, r) {
 			continue
 		}
