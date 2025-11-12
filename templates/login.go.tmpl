@@ -15,6 +15,10 @@
                         <h1 class="card-title text-center mb-4">Entrar</h1>
 
                         <!-- OAuth Providers -->
+                        {{if or .Config.DiscordOAuthEnabled 
+                            .Config.GithubOAuthEnabled 
+                            .Config.XOAuthEnabled 
+                            .Config.FakeOAuthEnabled}}
                         <div class="mb-4">
                             <h6 class="card-subtitle mb-3">Conectar com:</h6>
                             {{if .Config.DiscordOAuthEnabled}}
@@ -55,7 +59,8 @@
                                 <span style="padding: 0 10px;">ou</span>
                             </div>
                         </div>
-
+                        {{end}}
+                       
                         <!-- Magic Link Form -->
                         <form method="post" action="/login/magic_link" id="magicLinkForm">
                             <div class="mb-3">

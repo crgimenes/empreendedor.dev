@@ -314,6 +314,11 @@ func runLuaFile(name string) {
 
 	config.Cfg.ResendAPIKey = L.MustGetString("ResendAPIKey")
 	config.Cfg.EmailDomain = L.MustGetString("EmailDomain")
+
+	if config.Cfg.BaseURL == "http://localhost:3210" ||
+		strings.HasPrefix(config.Cfg.BaseURL, "http://callisto:3210") {
+		session.EnableInsecureCookie()
+	}
 }
 
 func putState(st, verifier string, ttl time.Duration) {
