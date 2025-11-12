@@ -271,6 +271,9 @@ func runLuaFile(name string) {
 	L.SetGlobal("ResendAPIKey", ifEmpty(
 		os.Getenv("EDEV_RESEND_API_KEY"), config.Cfg.ResendAPIKey))
 
+	L.SetGlobal("EmailDomain", ifEmpty(
+		os.Getenv("EDEV_EMAIL_DOMAIN"), config.Cfg.EmailDomain))
+
 	// Read the Lua file.
 	b, err := os.ReadFile(filepath.Clean(name))
 	if err != nil {
@@ -310,6 +313,7 @@ func runLuaFile(name string) {
 	}
 
 	config.Cfg.ResendAPIKey = L.MustGetString("ResendAPIKey")
+	config.Cfg.EmailDomain = L.MustGetString("EmailDomain")
 }
 
 func putState(st, verifier string, ttl time.Duration) {
@@ -1659,10 +1663,23 @@ func handlerLoginMagic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// send the email with the link
 	link := config.Cfg.BaseURL + "/link/" + token
+	if config.Cfg.BaseURL == "http://localhost:3210" {
+		// for local dev, print the link to the console
+		log.Printf("debug magic link: %s", link)
+
+		// Return redirect URL
+		redirectURL := config.Cfg.BaseURL +
+			"/?message=" +
+			url.QueryEscape("Magic link (dev mode): "+link)
+
+		http.Redirect(w, r, redirectURL, http.StatusFound)
+		return
+	}
+
+	// send the email with the link
 	ret, err := mail.Send(mail.EmailRequest{
-		From:    "noreply@" + strings.TrimPrefix(config.Cfg.BaseURL, "https://"),
+		From:    "noreply@" + strings.TrimPrefix(config.Cfg.EmailDomain, "https://"),
 		To:      []string{email},
 		Subject: "Seu link de acesso magico",
 		Text: "Clique no link para fazer login:\n\t" +
