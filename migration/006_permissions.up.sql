@@ -9,10 +9,11 @@ CREATE TABLE IF NOT EXISTS edev_tenants (
 
 -- User <-> Tenant membership (many-to-many)
 CREATE TABLE IF NOT EXISTS edev_tenant_members (
+  id INTEGER PRIMARY KEY,
   tenant_id INTEGER NOT NULL REFERENCES edev_tenants(id) ON DELETE CASCADE,
   user_id   INTEGER NOT NULL REFERENCES edev_users(id)   ON DELETE CASCADE,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (tenant_id, user_id)
+  UNIQUE(tenant_id, user_id)
 );
 
 -- ============================
@@ -31,11 +32,12 @@ CREATE INDEX IF NOT EXISTS ix_groups_by_tenant ON edev_groups(tenant_id);
 -- Group memberships (scoped by tenant)
 -- ============================
 CREATE TABLE IF NOT EXISTS edev_group_members (
+  id INTEGER PRIMARY KEY,
   tenant_id INTEGER NOT NULL REFERENCES edev_tenants(id) ON DELETE CASCADE,
   group_id  INTEGER NOT NULL REFERENCES edev_groups(id)  ON DELETE CASCADE,
   user_id   INTEGER NOT NULL REFERENCES edev_users(id)   ON DELETE CASCADE,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (tenant_id, group_id, user_id)
+  UNIQUE(tenant_id, group_id, user_id)
 );
 
 CREATE INDEX IF NOT EXISTS ix_group_members_by_user  ON edev_group_members(tenant_id, user_id);
