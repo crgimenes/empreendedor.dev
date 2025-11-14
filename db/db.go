@@ -2,7 +2,7 @@
 // Goals: performance, concurrency and predictability with minimal dependencies.
 // - Separate pools: one writer (RW) and many readers (RO).
 // - WAL + synchronous=NORMAL + busy_timeout.
-// - Short transactions with timeouts per operation (not on Begin).
+// - Short transactions; no per-operation context timeouts in this layer.
 // - WAL checkpoint on Close() for hygiene.
 package db
 
@@ -35,12 +35,12 @@ type Transaction struct {
 	tx *sql.Tx
 }
 
-// Row wraps sql.Row so that the timeout context is canceled only after Scan or Err is invoked.
+// Row wraps sql.Row to keep a uniform return type and allow future extension.
+// No context cancellation is used at this layer.
 type Row struct {
-	row    *sql.Row
-	cancel context.CancelFunc
-	once   sync.Once
-	err    error
+	row  *sql.Row
+	once sync.Once
+	err  error
 }
 
 var (
@@ -50,26 +50,15 @@ var (
 	ErrNoRows = sql.ErrNoRows
 )
 
-func newRow(row *sql.Row, cancel context.CancelFunc) *Row {
-	return &Row{row: row, cancel: cancel}
+func newRow(row *sql.Row) *Row {
+	return &Row{row: row}
 }
 
 func errorRow(err error) *Row {
 	return &Row{err: err}
 }
 
-func (r *Row) release() {
-	if r == nil {
-		return
-	}
-	r.once.Do(func() {
-		if r.cancel != nil {
-			r.cancel()
-		}
-	})
-}
-
-// Scan delegates to the underlying sql.Row while ensuring the timeout context is released.
+// Scan delegates to the underlying sql.Row.
 func (r *Row) Scan(dest ...any) error {
 	if r == nil {
 		return errors.New("nil row")
@@ -80,11 +69,10 @@ func (r *Row) Scan(dest ...any) error {
 	if r.row == nil {
 		return errors.New("nil row")
 	}
-	defer r.release()
 	return r.row.Scan(dest...)
 }
 
-// Err mirrors (*sql.Row).Err and releases the timeout context.
+// Err mirrors (*sql.Row).Err.
 func (r *Row) Err() error {
 	if r == nil {
 		return errors.New("nil row")
@@ -95,7 +83,6 @@ func (r *Row) Err() error {
 	if r.row == nil {
 		return errors.New("nil row")
 	}
-	defer r.release()
 	return r.row.Err()
 }
 
@@ -111,7 +98,7 @@ const (
 )
 
 // New initializes RW/RO pools.
-// Uses config.Cfg.DBFile as the SQLite path/URI; defaults to "edev.db".
+// Uses config.Cfg.DBFile as the SQLite path/URI; defaults to "empreendedor.db".
 func New() (*SQLite, error) {
 	path := config.Cfg.DBFile
 	return NewWithPath(path)
@@ -145,10 +132,6 @@ func NewWithPath(path string) (*SQLite, error) {
 	rw.SetMaxOpenConns(1)
 	rw.SetMaxIdleConns(1)
 	rw.SetConnMaxLifetime(defaultConnMaxLifeRW)
-	if err := pingWithTimeout(rw, defaultWriteOpTimeout); err != nil {
-		utils.Closer(rw)
-		return nil, fmt.Errorf("ping RW: %w", err)
-	}
 	s.rw = rw
 
 	// Open readers (parallel reads).
@@ -164,27 +147,16 @@ func NewWithPath(path string) (*SQLite, error) {
 	ro.SetMaxOpenConns(max)
 	ro.SetMaxIdleConns(max)
 	ro.SetConnMaxLifetime(defaultConnMaxLifeRO)
-	if err := pingWithTimeout(ro, defaultReadOpTimeout); err != nil {
-		utils.Closer(ro)
-		utils.Closer(s.rw)
-		return nil, fmt.Errorf("ping RO: %w", err)
-	}
 	s.ro = ro
 
 	return s, nil
 }
 
-func pingWithTimeout(db *sql.DB, d time.Duration) error {
-	ctx, cancel := context.WithTimeout(context.Background(), d)
-	defer cancel()
-	return db.PingContext(ctx)
-}
-
 // BeginTransaction starts a write transaction.
 //
-// IMPORTANT: we intentionally DO NOT set a timeout context on BeginTx itself.
-// Timeouts are enforced on the subsequent Exec/Query* calls, not on Begin.
-// This avoids "transaction already committed/rolled back" when an early timeout fires.
+// IMPORTANT: We intentionally do not propagate context timeouts in this package.
+// Callers should avoid long-lived transactions; SQLite busy_timeout handles
+// transient contention, and application code should keep critical sections short.
 func (s *SQLite) BeginTransaction() (*Transaction, error) {
 	if s == nil || s.rw == nil {
 		return nil, errors.New("db not initialized")
@@ -226,9 +198,7 @@ func (t *Transaction) Exec(query string, args ...any) error {
 	if t == nil || t.tx == nil {
 		return errors.New("nil tx")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), defaultWriteOpTimeout)
-	defer cancel()
-	_, err := t.tx.ExecContext(ctx, query, args...)
+	_, err := t.tx.Exec(query, args...)
 	return err
 }
 
@@ -237,9 +207,8 @@ func (t *Transaction) Query(query string, args ...any) (*sql.Rows, error) {
 	if t == nil || t.tx == nil {
 		return nil, errors.New("nil tx")
 	}
-	// Important: Do not use a context with timeout here because the lifetime of
-	// sql.Rows extends beyond this function. Canceling the context at function
-	// return would abort row iteration and cause "context canceled" scan errors.
+	// Note: Do not use a request-scoped context here; the lifetime of sql.Rows
+	// extends beyond this function, and premature cancellation would break iteration.
 	return t.tx.Query(query, args...)
 }
 
@@ -248,8 +217,7 @@ func (t *Transaction) QueryRow(query string, args ...any) *Row {
 	if t == nil || t.tx == nil {
 		return errorRow(errors.New("nil tx"))
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), defaultReadOpTimeout)
-	return newRow(t.tx.QueryRowContext(ctx, query, args...), cancel)
+	return newRow(t.tx.QueryRow(query, args...))
 }
 
 // Exec executes a write statement on the RW pool (outside explicit transactions).
@@ -257,9 +225,7 @@ func (s *SQLite) Exec(query string, args ...any) error {
 	if s == nil || s.rw == nil {
 		return errors.New("db not initialized")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), defaultWriteOpTimeout)
-	defer cancel()
-	_, err := s.rw.ExecContext(ctx, query, args...)
+	_, err := s.rw.Exec(query, args...)
 	return err
 }
 
@@ -268,9 +234,8 @@ func (s *SQLite) Query(query string, args ...any) (*sql.Rows, error) {
 	if s == nil || s.ro == nil {
 		return nil, errors.New("db not initialized")
 	}
-	// Important: Avoid context with timeout here. The returned sql.Rows must
-	// remain valid for iteration by the caller. Using a context with a deferred
-	// cancel would prematurely cancel the query and lead to scan errors.
+	// Note: Avoid wrapping with request-scoped contexts here. The returned
+	// sql.Rows must remain valid for iteration by the caller.
 	return s.ro.Query(query, args...)
 }
 
@@ -279,16 +244,14 @@ func (s *SQLite) QueryRow(query string, args ...any) *Row {
 	if s == nil || s.ro == nil {
 		return errorRow(errors.New("db not initialized"))
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), defaultReadOpTimeout)
-	return newRow(s.ro.QueryRowContext(ctx, query, args...), cancel)
+	return newRow(s.ro.QueryRow(query, args...))
 }
 
 func (s *SQLite) QueryRowRW(query string, args ...any) *Row {
 	if s == nil || s.rw == nil {
 		return errorRow(errors.New("db not initialized"))
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), defaultReadOpTimeout)
-	return newRow(s.rw.QueryRowContext(ctx, query, args...), cancel)
+	return newRow(s.rw.QueryRow(query, args...))
 }
 
 // QueryRW allows SELECT using the RW pool (rarely needed).
@@ -296,7 +259,7 @@ func (s *SQLite) QueryRW(query string, args ...any) (*sql.Rows, error) {
 	if s == nil || s.rw == nil {
 		return nil, errors.New("db not initialized")
 	}
-	// See note above: do not cancel context before rows are consumed.
+	// See note above: keep rows consumable without premature cancellation.
 	return s.rw.Query(query, args...)
 }
 
@@ -305,9 +268,7 @@ func (s *SQLite) CheckpointWAL() error {
 	if s == nil || s.rw == nil {
 		return errors.New("db not initialized")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	_, err := s.rw.ExecContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`)
+	_, err := s.rw.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`)
 	return err
 }
 
@@ -1280,7 +1241,7 @@ func (s *SQLite) ListFilesByUserID(userID int64, offset int, limit int) ([]*File
 	)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
-			// Client aborted or context canceled; do not log as error
+			// Client aborted/canceled; do not log as error
 			return nil, err
 		}
 		log.Println("ListFilesByUserID query error:", err)
@@ -1307,7 +1268,7 @@ func (s *SQLite) ListFilesByUserID(userID int64, offset int, limit int) ([]*File
 		)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
-				// Client aborted or context canceled; do not log as error
+				// Client aborted/canceled; do not log as error
 				return nil, err
 			}
 			log.Println("ListFilesByUserID scan error:", err)
@@ -1351,6 +1312,7 @@ func (s *SQLite) ListFilesByUserIDSorted(userID int64, sort string, offset int, 
 	rows, err := s.Query(query, userID, limit, offset)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
+			// Client aborted/canceled; do not log as error
 			return nil, err
 		}
 		log.Println("ListFilesByUserIDSorted query error:", err)
@@ -1376,6 +1338,7 @@ func (s *SQLite) ListFilesByUserIDSorted(userID int64, sort string, offset int, 
 			&f.UpdatedAt,
 		); err != nil {
 			if errors.Is(err, context.Canceled) {
+				// Client aborted/canceled; do not log as error
 				return nil, err
 			}
 			log.Println("ListFilesByUserIDSorted scan error:", err)
@@ -1455,6 +1418,7 @@ func (s *SQLite) SearchFilesByUserIDFTS(userID int64, query string, sort string,
 	rows, err := s.Query(querySQL, userID, q, limit, offset)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
+			// Client aborted/canceled; do not log as error
 			return nil, err
 		}
 		log.Println("SearchFilesByUserIDFTS query error:", err)
@@ -1471,6 +1435,7 @@ func (s *SQLite) SearchFilesByUserIDFTS(userID int64, query string, sort string,
 			&f.Filedescription, &f.Processed, &f.CreatedAt, &f.UpdatedAt,
 		); err != nil {
 			if errors.Is(err, context.Canceled) {
+				// Client aborted/canceled; do not log as error
 				return nil, err
 			}
 			log.Println("SearchFilesByUserIDFTS scan error:", err)

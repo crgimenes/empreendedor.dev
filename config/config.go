@@ -30,7 +30,6 @@ type Config struct {
 var Cfg = &Config{
 	Addrs:           ":3210",
 	BaseURL:         "https://empreendedor.dev",
-	EmailDomain:     "empreendedor.dev",
 	GitTag:          "dev",
 	DBFile:          "edev.db",
 	SessionDuration: 10 * 24 * time.Hour, // 10 days

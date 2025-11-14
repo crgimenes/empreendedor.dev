@@ -2,11 +2,9 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -25,6 +23,7 @@ import (
 	"edev/config"
 	"edev/db"
 	"edev/filemanager"
+	"edev/forum"
 	"edev/log"
 	"edev/lua"
 	"edev/mail"
@@ -319,6 +318,7 @@ func runLuaFile(name string) {
 		strings.HasPrefix(config.Cfg.BaseURL, "http://callisto:3210") {
 		session.EnableInsecureCookie()
 	}
+
 }
 
 func putState(st, verifier string, ttl time.Duration) {
@@ -715,10 +715,6 @@ func filemanagerHandler(w http.ResponseWriter, r *http.Request) {
 	offset := 0
 	files, err := filemanager.ListFilesByUserID(u.ID, offset, limit)
 	if err != nil {
-		// Ignore benign client cancelations to avoid noisy logs
-		if errors.Is(err, context.Canceled) || strings.Contains(strings.ToLower(err.Error()), "context canceled") {
-			return
-		}
 		log.Printf("error listing files for user %s: %v", u.Email, err.Error())
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
@@ -826,10 +822,6 @@ func filemanagerListHandler(w http.ResponseWriter, r *http.Request) {
 		files, err = filemanager.ListFilesByUserIDSorted(u.ID, sort, offset, limit)
 	}
 	if err != nil {
-		// Ignore benign client cancelations to avoid noisy logs
-		if errors.Is(err, context.Canceled) || strings.Contains(strings.ToLower(err.Error()), "context canceled") {
-			return
-		}
 		log.Printf("error listing files for user %s: %v", u.Email, err.Error())
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
@@ -1781,7 +1773,7 @@ func sseHandler(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-ctx.Done():
 			// Client disconnected or connection timeout
-			log.Printf("SSE context done for user %s: %v", u.Email, ctx.Err())
+			//log.Printf("SSE context done for user %s: %v", u.Email, ctx.Err())
 			return
 
 		case <-ticker.C:
@@ -2113,6 +2105,8 @@ func main() {
 	mux.HandleFunc("/files/edit", filemanagerEditHandler)       // edit file metadata
 	mux.HandleFunc("/files/delete", filemanagerDeleteHandler)   // delete user file
 
+	forum.Routers(mux) // forum routes
+
 	// ------------------------------------------
 
 	srv := &http.Server{
@@ -2145,11 +2139,15 @@ func main() {
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	<-stop
 
-	log.Println("Shutting down gracefully...")
-	ctx, cancel := context.WithTimeout(
-		context.Background(),
-		5*time.Second)
-	defer cancel()
+	log.Println("Shutting down gracefully (no context timeout)...")
+	// Disable keep-alives to encourage clients to disconnect quickly.
+	srv.SetKeepAlivesEnabled(false)
+
+	// Notify SSE clients (best-effort); they will see disconnect soon after.
+	n := session.BroadcastSSENotification("shutdown")
+	log.Printf("Broadcasted shutdown to %d SSE channels", n)
+	// Small pause to allow kernel buffers to flush messages.
+	time.Sleep(250 * time.Millisecond)
 
 	// Save sessions to file
 	err = session.SaveToGobFile("sessions.gob")
@@ -2157,9 +2155,9 @@ func main() {
 		log.Printf("Session save error: %v", err)
 	}
 
-	err = srv.Shutdown(ctx)
-	if err != nil {
-		log.Printf("Shutdown error: %v", err)
+	// Direct close without waiting for a context deadline.
+	if cerr := srv.Close(); cerr != nil {
+		log.Printf("Server close error: %v", cerr)
 	}
 
 	if db.Storage != nil {
