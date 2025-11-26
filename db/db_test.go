@@ -14,6 +14,10 @@ import (
 	"edev/utils"
 )
 
+// testMigrationMu serializes schema migrations executed by initTestDB to avoid
+// concurrent global Storage mutation leading to intermittent missing-table errors.
+var testMigrationMu sync.Mutex
+
 // helper: unwrap rows/error
 func mustRows(t *testing.T, rows *sql.Rows, err error) *sql.Rows {
 	t.Helper()
@@ -115,17 +119,27 @@ func TestExecAndQuery(t *testing.T) {
 	defer s.Close()
 
 	// Create table and insert rows via Exec (RW).
-	if err := s.Exec(`CREATE TABLE IF NOT EXISTS items(id INTEGER PRIMARY KEY, name TEXT NOT NULL)`); err != nil {
+	const sqlCreateItems = `CREATE TABLE IF NOT EXISTS items(
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL
+        )`
+	if err := s.Exec(sqlCreateItems); err != nil {
 		t.Fatalf("create table: %v", err)
 	}
 	for i := 0; i < 3; i++ {
-		if err := s.Exec(`INSERT INTO items(name) VALUES(?)`, fmt.Sprintf("n%d", i)); err != nil {
+		const sqlInsertItem = `INSERT INTO items(
+                name
+            ) VALUES (?)`
+		if err := s.Exec(sqlInsertItem, fmt.Sprintf("n%d", i)); err != nil {
 			t.Fatalf("insert: %v", err)
 		}
 	}
 
 	// Query (RO): count and targeted lookup.
-	rows, err := s.Query(`SELECT COUNT(*) FROM items`)
+	const sqlCountItems = `SELECT
+            COUNT(*)
+        FROM items`
+	rows, err := s.Query(sqlCountItems)
 	if err != nil {
 		t.Fatalf("count: %v", err)
 	}
@@ -142,7 +156,11 @@ func TestExecAndQuery(t *testing.T) {
 	}
 
 	var name string
-	if err := s.QueryRow(`SELECT name FROM items WHERE id = 2`).Scan(&name); err != nil {
+	const sqlSelectItemByID = `SELECT
+            name
+        FROM items
+        WHERE id = ?    -- 1`
+	if err := s.QueryRow(sqlSelectItemByID, 2).Scan(&name); err != nil {
 		t.Fatalf("queryrow: %v", err)
 	}
 	if name != "n1" {
@@ -162,7 +180,11 @@ func TestTransactionCommitRollback(t *testing.T) {
 	}
 	defer s.Close()
 
-	if err := s.Exec(`CREATE TABLE IF NOT EXISTS kv(k TEXT PRIMARY KEY, v TEXT NOT NULL)`); err != nil {
+	const sqlCreateKV = `CREATE TABLE IF NOT EXISTS kv(
+            k TEXT PRIMARY KEY,
+            v TEXT NOT NULL
+        )`
+	if err := s.Exec(sqlCreateKV); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 
@@ -171,14 +193,22 @@ func TestTransactionCommitRollback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("begin: %v", err)
 	}
-	if err := tx.Exec(`INSERT INTO kv(k,v) VALUES(?,?)`, "a", "1"); err != nil {
+	const sqlInsertKV = `INSERT INTO kv(
+                k,
+                v
+            ) VALUES (?, ?)`
+	if err := tx.Exec(sqlInsertKV, "a", "1"); err != nil {
 		t.Fatalf("insert a: %v", err)
 	}
 	if err := tx.Commit(); err != nil {
 		t.Fatalf("commit: %v", err)
 	}
 	var v string
-	if err := s.QueryRow(`SELECT v FROM kv WHERE k=?`, "a").Scan(&v); err != nil {
+	const sqlSelectKV = `SELECT
+            v
+        FROM kv
+        WHERE k = ?    -- 1`
+	if err := s.QueryRow(sqlSelectKV, "a").Scan(&v); err != nil {
 		t.Fatalf("select a: %v", err)
 	}
 	if v != "1" {
@@ -190,14 +220,14 @@ func TestTransactionCommitRollback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("begin2: %v", err)
 	}
-	if err := tx2.Exec(`INSERT INTO kv(k,v) VALUES(?,?)`, "b", "2"); err != nil {
+	if err := tx2.Exec(sqlInsertKV, "b", "2"); err != nil {
 		t.Fatalf("insert b: %v", err)
 	}
 	if err := tx2.Rollback(); err != nil {
 		t.Fatalf("rollback: %v", err)
 	}
 	var v2 string
-	err = s.QueryRow(`SELECT v FROM kv WHERE k=?`, "b").Scan(&v2)
+	err = s.QueryRow(sqlSelectKV, "b").Scan(&v2)
 	if err == nil {
 		t.Fatalf("expected no row for k=b after rollback, got v=%s", v2)
 	}
@@ -215,11 +245,17 @@ func TestCheckpointAndClose(t *testing.T) {
 	}
 
 	// Generate WAL write activity.
-	if err := s.Exec(`CREATE TABLE IF NOT EXISTS t(x)`); err != nil {
+	const sqlCreateT = `CREATE TABLE IF NOT EXISTS t(
+            x
+        )`
+	if err := s.Exec(sqlCreateT); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	for i := 0; i < 100; i++ {
-		if err := s.Exec(`INSERT INTO t(x) VALUES(?)`, i); err != nil {
+		const sqlInsertT = `INSERT INTO t(
+                x
+            ) VALUES (?)`
+		if err := s.Exec(sqlInsertT, i); err != nil {
 			t.Fatalf("insert: %v", err)
 		}
 	}
@@ -245,7 +281,10 @@ func TestConcurrentReadersSingleWriter(t *testing.T) {
 	}
 	defer s.Close()
 
-	if err := s.Exec(`CREATE TABLE IF NOT EXISTS c(n INTEGER)`); err != nil {
+	const sqlCreateC = `CREATE TABLE IF NOT EXISTS c(
+            n INTEGER
+        )`
+	if err := s.Exec(sqlCreateC); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 
@@ -262,7 +301,10 @@ func TestConcurrentReadersSingleWriter(t *testing.T) {
 			case <-stop:
 				return
 			case <-ticker.C:
-				_ = s.Exec(`INSERT INTO c(n) VALUES(strftime('%s','now'))`)
+				const sqlInsertC = `INSERT INTO c(
+                    n
+                ) VALUES (STRFTIME('%s', 'now'))`
+				_ = s.Exec(sqlInsertC)
 			}
 		}
 	})
@@ -275,7 +317,10 @@ func TestConcurrentReadersSingleWriter(t *testing.T) {
 			deadline := time.Now().Add(150 * time.Millisecond)
 			for time.Now().Before(deadline) && readErr.Load() == nil {
 				var cnt int
-				if err := s.QueryRow(`SELECT COUNT(*) FROM c`).Scan(&cnt); err != nil {
+				const sqlCountC = `SELECT
+                    COUNT(*)
+                FROM c`
+				if err := s.QueryRow(sqlCountC).Scan(&cnt); err != nil {
 					readErr.Store(err)
 					return
 				}
@@ -310,13 +355,20 @@ func (a *atomicError) Load() error {
 	return a.e
 }
 
-// initTestDB initializes an in-memory SQLite database with the schema.
+// initTestDB initializes a test SQLite database with the schema.
 // It returns the SQLite instance or fails the test.
+//
+// The test database file is stored in a temporary directory created by t.TempDir(),
+// which is automatically cleaned up by Go's test framework after the test completes.
+// Database connections are closed via defer s.Close() in calling tests.
+//
+// Schema is created by temporarily setting Storage to run migrations on the test instance.
 func initTestDB(t *testing.T) *SQLite {
 	t.Helper()
 
-	// Use temp file instead of :memory: to ensure RW and RO pools share the same database.
+	// Use temp file to ensure RW and RO pools share the same database.
 	// If we use ":memory:" directly, the RW and RO pools will have separate in-memory databases.
+	// t.TempDir() guarantees automatic cleanup after test completes.
 	tmp := t.TempDir()
 	path := filepath.Join(tmp, "test.db")
 
@@ -325,61 +377,16 @@ func initTestDB(t *testing.T) *SQLite {
 		t.Fatalf("NewWithPath(%q): %v", path, err)
 	}
 
-	// Create schema from 001_base_system.up.sql
-	// Execute each CREATE statement separately because s.Exec only handles one statement at a time.
-	statements := []string{
-		`CREATE TABLE IF NOT EXISTS edev_core_users (
-    id INTEGER PRIMARY KEY,
-	reference_id TEXT NOT NULL UNIQUE DEFAULT "", -- a trigger will set this to a UUID
-    username TEXT,
-    email TEXT,
-    enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0,1)),
-    avatar_url TEXT,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-)`,
-		`CREATE TABLE IF NOT EXISTS edev_core_identities (
-    id INTEGER PRIMARY KEY,
-    user_id INTEGER NOT NULL REFERENCES edev_core_users(id) ON DELETE CASCADE,
-    provider TEXT NOT NULL,
-    provider_uid TEXT NOT NULL,
-    avatar_url TEXT,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(provider, provider_uid)
-)`,
-		`CREATE INDEX IF NOT EXISTS idx_edev_core_identities_user_id ON edev_core_identities(user_id)`,
-		`CREATE TABLE IF NOT EXISTS edev_core_magic_token (
-    id INTEGER PRIMARY KEY,
-    email TEXT NOT NULL,
-    token TEXT NOT NULL UNIQUE,
-    action TEXT NOT NULL,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    expires_at DATETIME NOT NULL DEFAULT (DATETIME('now', '+3 hour'))
-)`,
-		`CREATE TRIGGER IF NOT EXISTS edev_core_users_reference_uuid
-AFTER INSERT ON edev_core_users
-BEGIN
-  UPDATE edev_core_users
-  SET reference_id = (
-    select substr(u,1,8)||'-'||
-    substr(u,9,4)||'-4'||
-    substr(u,13,3)||'-'||v||
-    substr(u,17,3)||'-'||
-    substr(u,21,12) from (
-        select
-            lower(hex(randomblob(16))) as u,
-            substr('89ab',abs(random()) % 4 + 1, 1) as v)
-    )
-  WHERE id = NEW.id;
-END;
-`,
-	}
+	// Temporarily set Storage to run migrations on the test instance (serialized).
+	testMigrationMu.Lock()
+	oldStorage := Storage
+	Storage = s
+	err = RunMigration()
+	Storage = oldStorage
+	testMigrationMu.Unlock()
 
-	for _, stmt := range statements {
-		if err := s.Exec(stmt); err != nil {
-			t.Fatalf("schema exec: %v", err)
-		}
+	if err != nil {
+		t.Fatalf("RunMigration: %v", err)
 	}
 
 	return s
@@ -392,15 +399,21 @@ func TestGetUserByOAuthProviderID(t *testing.T) {
 	defer s.Close()
 
 	// Insert a test user and identity.
-	if err := s.Exec(`
-		INSERT INTO edev_core_users (username, email, enabled) VALUES (?, ?, ?)
-	`, "testuser", "test@example.com", 1); err != nil {
+	const sqlInsertUser = `INSERT INTO users (
+            username,
+            email,
+            enabled
+        ) VALUES (?, ?, ?)`
+	if err := s.Exec(sqlInsertUser, "testuser", "test@example.com", 1); err != nil {
 		t.Fatalf("insert user: %v", err)
 	}
 
-	if err := s.Exec(`
-		INSERT INTO edev_core_identities (user_id, provider, provider_uid) VALUES (?, ?, ?)
-	`, 1, "github", "gh_12345"); err != nil {
+	const sqlInsertIdentity = `INSERT INTO identities (
+            user_id,
+            provider,
+            provider_uid
+        ) VALUES (?, ?, ?)`
+	if err := s.Exec(sqlInsertIdentity, 1, "github", "gh_12345"); err != nil {
 		t.Fatalf("insert identity: %v", err)
 	}
 
@@ -486,7 +499,11 @@ func TestStoreMagicLinkToken(t *testing.T) {
 			if !tt.wantErr {
 				// Verify token was stored
 				var storedEmail string
-				err := s.QueryRow(`SELECT email FROM edev_core_magic_token WHERE token = ?`, tt.token).Scan(&storedEmail)
+				const sqlSelectTokenEmail = `SELECT
+                    email
+                FROM magic_token
+                WHERE token = ?    -- 1`
+				err := s.QueryRow(sqlSelectTokenEmail, tt.token).Scan(&storedEmail)
 				if err != nil {
 					t.Fatalf("verify token: %v", err)
 				}
@@ -559,18 +576,24 @@ func TestPurgeExpiredMagicLinkTokens(t *testing.T) {
 	defer s.Close()
 
 	// Insert an expired token using SQLite's time functions
-	if err := s.Exec(`
-		INSERT INTO edev_core_magic_token (email, token, action, expires_at)
-		VALUES (?, ?, ?, DATETIME('now', '-1 hour'))
-	`, "expired@example.com", "tok_expired", "login"); err != nil {
+	const sqlInsertExpiredToken = `INSERT INTO magic_token (
+            email,
+            token,
+            action,
+            expires_at
+        ) VALUES (?, ?, ?, DATETIME('now', '-1 hour'))`
+	if err := s.Exec(sqlInsertExpiredToken, "expired@example.com", "tok_expired", "login"); err != nil {
 		t.Fatalf("insert expired token: %v", err)
 	}
 
 	// Insert a valid (future) token using SQLite's time functions
-	if err := s.Exec(`
-		INSERT INTO edev_core_magic_token (email, token, action, expires_at)
-		VALUES (?, ?, ?, DATETIME('now', '+3 hour'))
-	`, "valid@example.com", "tok_valid", "login"); err != nil {
+	const sqlInsertValidToken = `INSERT INTO magic_token (
+            email,
+            token,
+            action,
+            expires_at
+        ) VALUES (?, ?, ?, DATETIME('now', '+3 hour'))`
+	if err := s.Exec(sqlInsertValidToken, "valid@example.com", "tok_valid", "login"); err != nil {
 		t.Fatalf("insert valid token: %v", err)
 	}
 
@@ -581,7 +604,11 @@ func TestPurgeExpiredMagicLinkTokens(t *testing.T) {
 
 	// Verify expired token is gone
 	var expiredCount int
-	if err := s.QueryRow(`SELECT COUNT(*) FROM edev_core_magic_token WHERE token = ?`, "tok_expired").Scan(&expiredCount); err != nil {
+	const sqlCountToken = `SELECT
+            COUNT(*)
+        FROM magic_token
+        WHERE token = ?    -- 1`
+	if err := s.QueryRow(sqlCountToken, "tok_expired").Scan(&expiredCount); err != nil {
 		t.Fatalf("count expired: %v", err)
 	}
 	if expiredCount != 0 {
@@ -590,7 +617,7 @@ func TestPurgeExpiredMagicLinkTokens(t *testing.T) {
 
 	// Verify valid token still exists
 	var validCount int
-	if err := s.QueryRow(`SELECT COUNT(*) FROM edev_core_magic_token WHERE token = ?`, "tok_valid").Scan(&validCount); err != nil {
+	if err := s.QueryRow(sqlCountToken, "tok_valid").Scan(&validCount); err != nil {
 		t.Fatalf("count valid: %v", err)
 	}
 	if validCount != 1 {
@@ -605,10 +632,13 @@ func TestGetUserByID(t *testing.T) {
 	defer s.Close()
 
 	// Insert test user
-	if err := s.Exec(`
-		INSERT INTO edev_core_users (username, email, enabled, avatar_url)
-		VALUES (?, ?, ?, ?)
-	`, "johndoe", "john@example.com", 1, "https://avatar.example.com/john.jpg"); err != nil {
+	const sqlInsertTestUser = `INSERT INTO users (
+            username,
+            email,
+            enabled,
+            avatar_url
+        ) VALUES (?, ?, ?, ?)`
+	if err := s.Exec(sqlInsertTestUser, "johndoe", "john@example.com", 1, "https://avatar.example.com/john.jpg"); err != nil {
 		t.Fatalf("insert user: %v", err)
 	}
 
@@ -778,7 +808,7 @@ func TestGetUserOrCreateByOAuth(t *testing.T) {
 				// Verify identity was created
 				var identityCount int
 				if err := s.QueryRow(`
-					SELECT COUNT(*) FROM edev_core_identities
+					SELECT COUNT(*) FROM identities
 					WHERE user_id = ? AND provider = ? AND provider_uid = ?
 				`, u.ID, tt.provider, tt.providerID).Scan(&identityCount); err != nil {
 					t.Fatalf("count identities: %v", err)
@@ -802,7 +832,11 @@ func TestTransactionQueryRow(t *testing.T) {
 	defer s.Close()
 
 	// Create test table
-	if err := s.Exec(`CREATE TABLE IF NOT EXISTS test_data(id INTEGER PRIMARY KEY, value TEXT)`); err != nil {
+	const sqlCreateTestData = `CREATE TABLE IF NOT EXISTS test_data(
+            id INTEGER PRIMARY KEY,
+            value TEXT
+        )`
+	if err := s.Exec(sqlCreateTestData); err != nil {
 		t.Fatalf("create table: %v", err)
 	}
 
@@ -812,14 +846,21 @@ func TestTransactionQueryRow(t *testing.T) {
 		t.Fatalf("BeginTransaction() error = %v", err)
 	}
 
-	if err := tx.Exec(`INSERT INTO test_data(value) VALUES(?)`, "test_value"); err != nil {
+	const sqlInsertTestData = `INSERT INTO test_data(
+            value
+        ) VALUES (?)`
+	if err := tx.Exec(sqlInsertTestData, "test_value"); err != nil {
 		t.Fatalf("tx.Exec() error = %v", err)
 		_ = tx.Rollback()
 	}
 
 	// Query within transaction
 	var value string
-	if err := tx.QueryRow(`SELECT value FROM test_data WHERE id = 1`).Scan(&value); err != nil {
+	const sqlSelectTestData = `SELECT
+            value
+        FROM test_data
+        WHERE id = ?    -- 1`
+	if err := tx.QueryRow(sqlSelectTestData, 1).Scan(&value); err != nil {
 		t.Fatalf("tx.QueryRow().Scan() error = %v", err)
 		_ = tx.Rollback()
 	}
@@ -834,7 +875,7 @@ func TestTransactionQueryRow(t *testing.T) {
 
 	// Verify data persisted
 	var persistedValue string
-	if err := s.QueryRow(`SELECT value FROM test_data WHERE id = 1`).Scan(&persistedValue); err != nil {
+	if err := s.QueryRow(sqlSelectTestData, 1).Scan(&persistedValue); err != nil {
 		t.Fatalf("verify persisted: %v", err)
 	}
 	if persistedValue != "test_value" {
@@ -849,7 +890,11 @@ func TestTransactionQuery(t *testing.T) {
 	defer s.Close()
 
 	// Create test table
-	if err := s.Exec(`CREATE TABLE IF NOT EXISTS numbers(id INTEGER PRIMARY KEY, num INTEGER)`); err != nil {
+	const sqlCreateNumbers = `CREATE TABLE IF NOT EXISTS numbers(
+            id INTEGER PRIMARY KEY,
+            num INTEGER
+        )`
+	if err := s.Exec(sqlCreateNumbers); err != nil {
 		t.Fatalf("create table: %v", err)
 	}
 
@@ -860,14 +905,21 @@ func TestTransactionQuery(t *testing.T) {
 	}
 
 	for i := 1; i <= 3; i++ {
-		if err := tx.Exec(`INSERT INTO numbers(num) VALUES(?)`, i*10); err != nil {
+		const sqlInsertNumbers = `INSERT INTO numbers(
+                num
+            ) VALUES (?)`
+		if err := tx.Exec(sqlInsertNumbers, i*10); err != nil {
 			_ = tx.Rollback()
 			t.Fatalf("tx.Exec() error = %v", err)
 		}
 	}
 
 	// Query rows within transaction
-	rows, err := tx.Query(`SELECT num FROM numbers ORDER BY num`)
+	const sqlSelectNumbers = `SELECT
+            num
+        FROM numbers
+        ORDER BY num`
+	rows, err := tx.Query(sqlSelectNumbers)
 	if err != nil {
 		_ = tx.Rollback()
 		t.Fatalf("tx.Query() error = %v", err)
@@ -944,7 +996,10 @@ func TestStoreMagicLinkTokenComprehensive(t *testing.T) {
 			if !tt.wantErr {
 				// Verify token was stored
 				var storedEmail string
-				const query = `SELECT email FROM edev_core_magic_token WHERE token = ?`
+				const query = `SELECT
+                    email
+                FROM magic_token
+                WHERE token = ?    -- 1`
 				err := s.QueryRow(query, tt.token).Scan(&storedEmail)
 				if err != nil {
 					t.Fatalf("failed to verify stored token: %v", err)
@@ -1023,7 +1078,10 @@ func TestConsumeMagicLinkTokenComprehensive(t *testing.T) {
 			// Verify token was deleted only if it was successfully consumed
 			if email != "" {
 				var count int
-				const countQuery = `SELECT COUNT(*) FROM edev_core_magic_token WHERE token = ?`
+				const countQuery = `SELECT
+                    COUNT(*)
+                FROM magic_token
+                WHERE token = ?    -- 1`
 				if err := s.QueryRow(countQuery, tt.token).Scan(&count); err != nil {
 					t.Fatalf("failed to count token: %v", err)
 				}
@@ -1074,7 +1132,10 @@ func TestPurgeExpiredMagicLinkTokensComprehensive(t *testing.T) {
 
 	// Verify expired tokens are gone
 	var count int
-	const countExpired = `SELECT COUNT(*) FROM edev_core_magic_token WHERE expires_at <= CURRENT_TIMESTAMP`
+	const countExpired = `SELECT
+            COUNT(*)
+        FROM magic_token
+        WHERE expires_at <= CURRENT_TIMESTAMP`
 	if err := s.QueryRow(countExpired).Scan(&count); err != nil {
 		t.Fatalf("failed to count expired: %v", err)
 	}
@@ -1084,7 +1145,10 @@ func TestPurgeExpiredMagicLinkTokensComprehensive(t *testing.T) {
 
 	// Verify valid token still exists
 	var validExists int
-	const countValid = `SELECT COUNT(*) FROM edev_core_magic_token WHERE token = ?`
+	const countValid = `SELECT
+            COUNT(*)
+        FROM magic_token
+        WHERE token = ?    -- 1`
 	if err := s.QueryRow(countValid, "valid-1").Scan(&validExists); err != nil {
 		t.Fatalf("failed to verify valid token: %v", err)
 	}
@@ -1107,7 +1171,7 @@ func TestGetUserByOAuthProviderIDComprehensive(t *testing.T) {
 			name: "existing oauth identity",
 			setupFunc: func(t *testing.T, s *SQLite) {
 				// Create a user
-				const userSQL = `INSERT INTO edev_core_users(email, username, avatar_url) VALUES(?, ?, ?)
+				const userSQL = `INSERT INTO users(email, username, avatar_url) VALUES(?, ?, ?)
 				RETURNING id`
 				var userID int64
 				if err := s.QueryRowRW(userSQL, "oauth@example.com", "oauthuser", "").Scan(&userID); err != nil {
@@ -1115,7 +1179,7 @@ func TestGetUserByOAuthProviderIDComprehensive(t *testing.T) {
 				}
 
 				// Create identity
-				const identitySQL = `INSERT INTO edev_core_identities(user_id, provider, provider_uid)
+				const identitySQL = `INSERT INTO identities(user_id, provider, provider_uid)
 				VALUES(?, ?, ?)`
 				if err := s.Exec(identitySQL, userID, "github", "gh-123"); err != nil {
 					t.Fatalf("setup identity: %v", err)
@@ -1166,7 +1230,7 @@ func TestGetUserByIDComprehensive(t *testing.T) {
 		{
 			name: "existing user",
 			setupFunc: func(t *testing.T, s *SQLite) int64 {
-				const sql = `INSERT INTO edev_core_users(email, username, avatar_url, enabled)
+				const sql = `INSERT INTO users(email, username, avatar_url, enabled)
 				VALUES(?, ?, ?, ?) RETURNING id`
 				var id int64
 				if err := s.QueryRowRW(sql,
@@ -1235,7 +1299,7 @@ func TestGetUserOrCreateByEmailComprehensive(t *testing.T) {
 		{
 			name: "get existing user",
 			setupFunc: func(t *testing.T, s *SQLite) {
-				const sql = `INSERT INTO edev_core_users(email, username, avatar_url) VALUES(?, ?, ?)`
+				const sql = `INSERT INTO users(email, username, avatar_url) VALUES(?, ?, ?)`
 				if err := s.Exec(sql, "existing@example.com", "existinguser", ""); err != nil {
 					t.Fatalf("setup: %v", err)
 				}
@@ -1296,14 +1360,14 @@ func TestGetUserOrCreateByOAuthComprehensive(t *testing.T) {
 			name: "get existing oauth user",
 			setupFunc: func(t *testing.T, s *SQLite) {
 				// Create existing user with identity
-				const userSQL = `INSERT INTO edev_core_users(email, username, avatar_url) VALUES(?, ?, ?)
+				const userSQL = `INSERT INTO users(email, username, avatar_url) VALUES(?, ?, ?)
 				RETURNING id`
 				var userID int64
 				if err := s.QueryRowRW(userSQL, "existing@github.com", "existinggithub", "").Scan(&userID); err != nil {
 					t.Fatalf("setup user: %v", err)
 				}
 
-				const identitySQL = `INSERT INTO edev_core_identities(user_id, provider, provider_uid)
+				const identitySQL = `INSERT INTO identities(user_id, provider, provider_uid)
 				VALUES(?, ?, ?)`
 				if err := s.Exec(identitySQL, userID, "github", "gh-existing"); err != nil {
 					t.Fatalf("setup identity: %v", err)
@@ -1343,8 +1407,11 @@ func TestGetUserOrCreateByOAuthComprehensive(t *testing.T) {
 
 				// Verify identity was created
 				var identityCount int
-				const countSQL = `SELECT COUNT(*) FROM edev_core_identities
-				WHERE provider = ? AND provider_uid = ?`
+				const countSQL = `SELECT
+                COUNT(*)
+            FROM identities
+            WHERE provider = ?         -- 1
+            AND provider_uid = ?       -- 2`
 				if err := s.QueryRow(countSQL, tt.provider, tt.providerID).Scan(&identityCount); err != nil {
 					t.Fatalf("failed to count identities: %v", err)
 				}
@@ -1561,7 +1628,12 @@ func TestOAuthEmailConflictResolution(t *testing.T) {
 
 	// Step 4: Verify GitHub identity was added to existing user
 	var identityCount int
-	const countSQL = `SELECT COUNT(*) FROM edev_core_identities WHERE user_id = ? AND provider = ? AND provider_uid = ?`
+	const countSQL = `SELECT
+            COUNT(*)
+        FROM identities
+        WHERE user_id = ?           -- 1
+        AND provider = ?            -- 2
+        AND provider_uid = ?        -- 3`
 	if err := s.QueryRow(countSQL, magicLinkUser.ID, "github", "gh-12345").Scan(&identityCount); err != nil {
 		t.Fatalf("count identities: %v", err)
 	}
@@ -1608,7 +1680,7 @@ func TestOAuthUsernameConflictGeneration(t *testing.T) {
 
 	// Step 4: Verify both users exist and have different usernames
 	var user1ID int64
-	const checkSQL = `SELECT id FROM edev_core_users WHERE LOWER(email) = LOWER(?)`
+	const checkSQL = `SELECT id FROM users WHERE LOWER(email) = LOWER(?)`
 	if err := s.QueryRow(checkSQL, email1).Scan(&user1ID); err != nil {
 		t.Fatalf("query user1: %v", err)
 	}
@@ -1630,10 +1702,14 @@ func TestCountUsersWithUsernamePrefix(t *testing.T) {
 	defer s.Close()
 
 	// Create some users with matching prefixes
-	s.Exec(`INSERT INTO edev_core_users(email, username) VALUES(?, ?)`, "user1@example.com", "cesar")
-	s.Exec(`INSERT INTO edev_core_users(email, username) VALUES(?, ?)`, "user2@example.com", "cesar1")
-	s.Exec(`INSERT INTO edev_core_users(email, username) VALUES(?, ?)`, "user3@example.com", "cesar2")
-	s.Exec(`INSERT INTO edev_core_users(email, username) VALUES(?, ?)`, "user4@example.com", "other")
+	const sqlInsertUser2 = `INSERT INTO users(
+            email,
+            username
+        ) VALUES (?, ?)`
+	s.Exec(sqlInsertUser2, "user1@example.com", "cesar")
+	s.Exec(sqlInsertUser2, "user2@example.com", "cesar1")
+	s.Exec(sqlInsertUser2, "user3@example.com", "cesar2")
+	s.Exec(sqlInsertUser2, "user4@example.com", "other")
 
 	// Count users with "cesar" prefix
 	count, err := s.CountUsersWithUsernamePrefix("cesar")
@@ -1672,7 +1748,11 @@ func TestGenerateUniqueUsername(t *testing.T) {
 	}
 
 	// Test 2: Create a user with this username
-	s.Exec(`INSERT INTO edev_core_users(email, username) VALUES(?, ?)`, "user@example.com", "newname")
+	const sqlInsertUser3 = `INSERT INTO users(
+            email,
+            username
+        ) VALUES (?, ?)`
+	s.Exec(sqlInsertUser3, "user@example.com", "newname")
 
 	// Test 3: Generate username again (should return numbered version)
 	username, err = s.GenerateUniqueUsername("newname")
@@ -2040,8 +2120,13 @@ func TestGetUserOrCreateByOAuthMultipleProvidersViaEmail(t *testing.T) {
 
 	// Step 4: Verify both identities are linked
 	var ghCount, twCount int
-	_ = s.QueryRow(`SELECT COUNT(*) FROM edev_core_identities WHERE user_id = ? AND provider = ?`, u1.ID, "github").Scan(&ghCount)
-	_ = s.QueryRow(`SELECT COUNT(*) FROM edev_core_identities WHERE user_id = ? AND provider = ?`, u1.ID, "twitter").Scan(&twCount)
+	const sqlCountIdentities = `SELECT
+            COUNT(*)
+        FROM identities
+        WHERE user_id = ?       -- 1
+        AND provider = ?        -- 2`
+	_ = s.QueryRow(sqlCountIdentities, u1.ID, "github").Scan(&ghCount)
+	_ = s.QueryRow(sqlCountIdentities, u1.ID, "twitter").Scan(&twCount)
 
 	if ghCount != 1 || twCount != 1 {
 		t.Fatalf("expected both providers linked, got github=%d, twitter=%d", ghCount, twCount)
@@ -2238,7 +2323,11 @@ func TestStoreMagicLinkTokenValidation(t *testing.T) {
 
 	// Verify token was stored
 	var storedEmail string
-	_ = s.QueryRow(`SELECT email FROM edev_core_magic_token WHERE token = ?`, token).Scan(&storedEmail)
+	const sqlSelectToken = `SELECT
+            email
+        FROM magic_token
+        WHERE token = ?    -- 1`
+	_ = s.QueryRow(sqlSelectToken, token).Scan(&storedEmail)
 
 	if storedEmail != email {
 		t.Fatalf("expected email %q, got %q", email, storedEmail)
@@ -2335,10 +2424,14 @@ func TestGenerateUniqueUsernameMultipleConflicts(t *testing.T) {
 	defer s.Close()
 
 	// Create users with numbered usernames
-	s.Exec(`INSERT INTO edev_core_users(email, username) VALUES(?, ?)`, "u1@example.com", "alice")
-	s.Exec(`INSERT INTO edev_core_users(email, username) VALUES(?, ?)`, "u2@example.com", "alice1")
-	s.Exec(`INSERT INTO edev_core_users(email, username) VALUES(?, ?)`, "u3@example.com", "alice2")
-	s.Exec(`INSERT INTO edev_core_users(email, username) VALUES(?, ?)`, "u4@example.com", "alice3")
+	const sqlInsertUserAlice = `INSERT INTO users(
+            email,
+            username
+        ) VALUES (?, ?)`
+	s.Exec(sqlInsertUserAlice, "u1@example.com", "alice")
+	s.Exec(sqlInsertUserAlice, "u2@example.com", "alice1")
+	s.Exec(sqlInsertUserAlice, "u3@example.com", "alice2")
+	s.Exec(sqlInsertUserAlice, "u4@example.com", "alice3")
 
 	// Generate unique username should give alice4
 	username, err := s.GenerateUniqueUsername("alice")
@@ -2364,9 +2457,13 @@ func TestCountUsersWithUsernamePrefixEdgeCases(t *testing.T) {
 	}
 
 	// Create users and test case-insensitive matching
-	s.Exec(`INSERT INTO edev_core_users(email, username) VALUES(?, ?)`, "u1@example.com", "Test")
-	s.Exec(`INSERT INTO edev_core_users(email, username) VALUES(?, ?)`, "u2@example.com", "TEST1")
-	s.Exec(`INSERT INTO edev_core_users(email, username) VALUES(?, ?)`, "u3@example.com", "test2")
+	const sqlInsertUserTest = `INSERT INTO users(
+            email,
+            username
+        ) VALUES (?, ?)`
+	s.Exec(sqlInsertUserTest, "u1@example.com", "Test")
+	s.Exec(sqlInsertUserTest, "u2@example.com", "TEST1")
+	s.Exec(sqlInsertUserTest, "u3@example.com", "test2")
 
 	// Count with lowercase should match all case variations
 	count, _ = s.CountUsersWithUsernamePrefix("test")
@@ -2399,7 +2496,11 @@ func TestStoreMagicLinkTokenDuplicateEmail(t *testing.T) {
 
 	// Both should exist
 	var count int
-	_ = s.QueryRow(`SELECT COUNT(*) FROM edev_core_magic_token WHERE email = ?`, email).Scan(&count)
+	const sqlCountTokenEmail = `SELECT
+            COUNT(*)
+        FROM magic_token
+        WHERE email = ?    -- 1`
+	_ = s.QueryRow(sqlCountTokenEmail, email).Scan(&count)
 
 	if count != 2 {
 		t.Fatalf("expected 2 tokens for same email, got %d", count)
@@ -2425,7 +2526,10 @@ func TestPurgeExpiredMagicLinkTokensMultipleExpired(t *testing.T) {
 
 	// Verify initial state
 	var beforeCount int
-	_ = s.QueryRow(`SELECT COUNT(*) FROM edev_core_magic_token`).Scan(&beforeCount)
+	const sqlCountAllTokens = `SELECT
+            COUNT(*)
+        FROM magic_token`
+	_ = s.QueryRow(sqlCountAllTokens).Scan(&beforeCount)
 	if beforeCount != 8 {
 		t.Fatalf("expected 8 tokens before purge, got %d", beforeCount)
 	}
@@ -2435,7 +2539,7 @@ func TestPurgeExpiredMagicLinkTokensMultipleExpired(t *testing.T) {
 
 	// Verify only valid tokens remain
 	var afterCount int
-	_ = s.QueryRow(`SELECT COUNT(*) FROM edev_core_magic_token`).Scan(&afterCount)
+	_ = s.QueryRow(sqlCountAllTokens).Scan(&afterCount)
 	if afterCount != 3 {
 		t.Fatalf("expected 3 tokens after purge, got %d", afterCount)
 	}
@@ -2756,7 +2860,7 @@ func TestUpdateUserProfileUsernameValidationComprehensive(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Clear database for this subtest
-			s.Exec("DELETE FROM edev_core_users")
+			s.Exec("DELETE FROM users")
 
 			// Setup users
 			var users []*User
@@ -2856,8 +2960,8 @@ func TestGetUserOrCreateByOAuthInvalidUsername(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Clear database for this subtest
-			s.Exec("DELETE FROM edev_core_identities")
-			s.Exec("DELETE FROM edev_core_users")
+			s.Exec("DELETE FROM identities")
+			s.Exec("DELETE FROM users")
 
 			// Create OAuth user
 			user, err := s.GetUserOrCreateByOAuth("github", "gh123", tt.email, tt.username, "")
@@ -2930,7 +3034,7 @@ func TestMergeOAuthProfileDataInvalidUsername(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Reset user to initial state (email only, no username)
-			s.Exec("UPDATE edev_core_users SET username = '', enabled = 0 WHERE id = ?", user.ID)
+			s.Exec("UPDATE users SET username = '', enabled = 0 WHERE id = ?", user.ID)
 
 			// Merge OAuth profile data
 			updatedUser, err := s.MergeOAuthProfileData(user.ID, tt.oauthUsername, "")
@@ -3045,5 +3149,322 @@ func TestCreateMinimalUserForOAuthFallback(t *testing.T) {
 				t.Errorf("Retrieved user has different ID: expected %d, got %d", user.ID, retrievedUser.ID)
 			}
 		})
+	}
+}
+
+// TestBuildFTSQuery covers the unexported buildFTSQuery helper ensuring tokenization
+// and quote stripping behavior matches expectations.
+func TestBuildFTSQuery(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		in   string
+		out  string
+	}{
+		{"empty", "", ""},
+		{"spaces_only", "   \t  ", ""},
+		{"single_token", "alpha", "alpha*"},
+		{"multi_tokens", "alpha beta", "alpha* beta*"},
+		{"quoted_tokens", "'gamma' \"delta\"", "gamma* delta*"},
+		{"mixed_quotes", "'a\"b' c", "ab* c*"},
+	}
+
+	for _, tc := range cases {
+		got := buildFTSQuery(tc.in)
+		if got != tc.out {
+			// Keep failure concise; show both values
+			// Using Errorf (not Fatalf) to see all subcase failures
+			t.Errorf("%s: expected %q got %q", tc.name, tc.out, got)
+		}
+	}
+}
+
+// TestFileMetadataCRUDAndSearch exercises SaveFileMetadata, GetFileByUserIDAndFilename,
+// GetFileByUserReferenceIDAndFilename, ListFilesByUserID, ListFilesByUserIDSorted,
+// SearchFilesByUserIDFTS (both empty query fallback and real search),
+// UpdateFileMetadataByUserAndFilename and SoftDeleteFileByUserAndFilename.
+func TestFileMetadataCRUDAndSearch(t *testing.T) {
+	// Avoid t.Parallel here due to cumulative DB operations; keeps memory usage lower.
+	s := initTestDB(t)
+	defer s.Close()
+
+	// Insert a user; required for foreign key user_id.
+	const sqlInsertUser = `INSERT INTO users (
+	    email,             -- 1
+	    username,          -- 2
+	    avatar_url,        -- 3
+	    enabled,           -- 4
+	    created_at,
+	    updated_at
+	) VALUES (
+	    ?,                 -- 1
+	    ?,                 -- 2
+	    ?,                 -- 3
+	    ?,                 -- 4
+	    CURRENT_TIMESTAMP,
+	    CURRENT_TIMESTAMP
+	)
+	RETURNING
+	    id,                -- 1
+	    reference_id,      -- 2
+	    COALESCE(username, ''), -- 3
+	    email,             -- 4
+	    COALESCE(avatar_url, ''), -- 5
+	    enabled            -- 6`
+
+	var userID int64
+	var userRefID string
+	err := s.QueryRowRW(sqlInsertUser, "filetester@example.com", "filetester", "", true).Scan(&userID, &userRefID, new(string), new(string), new(string), new(bool))
+	if err != nil {
+		t.Fatalf("insert user error: %v", err)
+	}
+	// Reload to obtain trigger-populated reference_id (migrations set this after insert).
+	uReload, err := s.GetUserByID(userID)
+	if err != nil {
+		t.Fatalf("GetUserByID reload error: %v", err)
+	}
+	userRefID = uReload.ReferenceID
+
+	// SaveFileMetadata nil input should error.
+	if _, err := s.SaveFileMetadata(nil); err == nil {
+		t.Errorf("expected error on nil file metadata input")
+	}
+
+	// Create several files.
+	files := []*File{
+		{UserID: userID, OriginalFilename: "Beta.txt", Filename: "beta.txt", Filesize: 10, Filetype: "text/plain", Filehash: "h1", Filetag: "project", Filedescription: "alpha beta", Processed: false},
+		{UserID: userID, OriginalFilename: "alpha.txt", Filename: "alpha.txt", Filesize: 11, Filetype: "text/plain", Filehash: "h2", Filetag: "notes", Filedescription: "gamma delta", Processed: true},
+		{UserID: userID, OriginalFilename: "zeta.txt", Filename: "zeta.txt", Filesize: 12, Filetype: "text/plain", Filehash: "h3", Filetag: "misc", Filedescription: "epsilon", Processed: false},
+	}
+	for i, f := range files {
+		saved, err := s.SaveFileMetadata(f)
+		if err != nil {
+			t.Fatalf("SaveFileMetadata %d error: %v", i, err)
+		}
+		files[i] = saved
+	}
+
+	// GetFileByUserIDAndFilename existing
+	f1, err := s.GetFileByUserIDAndFilename(userID, "alpha.txt")
+	if err != nil || f1 == nil {
+		t.Fatalf("expected file alpha.txt, got err=%v file=%v", err, f1)
+	}
+	// GetFileByUserIDAndFilename missing
+	fn, err := s.GetFileByUserIDAndFilename(userID, "missing.txt")
+	if err != nil || fn != nil {
+		t.Fatalf("expected (nil,nil) for missing file, got (%v,%v)", fn, err)
+	}
+
+	// GetFileByUserReferenceIDAndFilename existing via reference_id
+	f2, err := s.GetFileByUserReferenceIDAndFilename(userRefID, "beta.txt")
+	if err != nil || f2 == nil {
+		t.Fatalf("expected file beta.txt by reference id, got err=%v file=%v", err, f2)
+	}
+
+	// ListFilesByUserID basic listing
+	listed, err := s.ListFilesByUserID(userID, 0, 10)
+	if err != nil || len(listed) != 3 {
+		t.Fatalf("expected 3 files listed, got %d err=%v", len(listed), err)
+	}
+
+	// ListFilesByUserIDSorted by name ascending should have alpha first.
+	listedSorted, err := s.ListFilesByUserIDSorted(userID, "name_asc", 0, 10)
+	if err != nil {
+		t.Fatalf("ListFilesByUserIDSorted error: %v", err)
+	}
+	if len(listedSorted) == 0 || listedSorted[0].OriginalFilename != "alpha.txt" {
+		t.Errorf("expected first sorted file alpha.txt, got %q", func() string {
+			if len(listedSorted) == 0 {
+				return "(none)"
+			}
+			return listedSorted[0].OriginalFilename
+		}())
+	}
+
+	// SearchFilesByUserIDFTS empty query fallback: returns same as ListFilesByUserID (limit may differ)
+	searchEmpty, err := s.SearchFilesByUserIDFTS(userID, "   ", "date_desc", 0, 10)
+	if err != nil || len(searchEmpty) != 3 {
+		t.Fatalf("expected fallback search to list 3 files, got %d err=%v", len(searchEmpty), err)
+	}
+
+	// SearchFilesByUserIDFTS real query matching "alpha" (in description of first file) and tag "project" (tokenization AND behavior requires both if both supplied).
+	searchOne, err := s.SearchFilesByUserIDFTS(userID, "alpha", "date_desc", 0, 10)
+	if err != nil {
+		t.Fatalf("search alpha error: %v", err)
+	}
+	if len(searchOne) == 0 {
+		t.Fatalf("expected at least one search result for 'alpha'")
+	}
+
+	// Update metadata for beta.txt
+	if err := s.UpdateFileMetadataByUserAndFilename(userID, "beta.txt", "updated desc", "updatedtag"); err != nil {
+		t.Fatalf("UpdateFileMetadata error: %v", err)
+	}
+	fUpdated, err := s.GetFileByUserIDAndFilename(userID, "beta.txt")
+	if err != nil || fUpdated == nil {
+		t.Fatalf("expected updated beta.txt, err=%v file=%v", err, fUpdated)
+	}
+	if fUpdated.Filedescription != "updated desc" || fUpdated.Filetag != "updatedtag" {
+		t.Errorf("metadata not updated: got desc=%q tag=%q", fUpdated.Filedescription, fUpdated.Filetag)
+	}
+
+	// Soft delete zeta.txt then ensure retrieval returns nil
+	if err := s.SoftDeleteFileByUserAndFilename(userID, "zeta.txt"); err != nil {
+		t.Fatalf("SoftDelete error: %v", err)
+	}
+	deletedFile, err := s.GetFileByUserIDAndFilename(userID, "zeta.txt")
+	if err != nil || deletedFile != nil {
+		t.Fatalf("expected deleted file to be nil, got %v err=%v", deletedFile, err)
+	}
+}
+
+// TestForumLifecycleCRUD exercises forum, thread, and post CRUD paths:
+// CreateForum, GetForumByExternalID, UpdateForum, ListForums,
+// CreateThread, GetThreadByExternalID, ListThreadsByForumID, UpdateThread,
+// CreatePost, UpdatePost, GetPostsByThreadID, DeletePost.
+func TestForumLifecycleCRUD(t *testing.T) {
+	s := initTestDB(t)
+	defer s.Close()
+
+	// Insert a user to own forum/thread/posts.
+	const sqlInsertUser = `INSERT INTO users (
+	    email,             -- 1
+	    username,          -- 2
+	    avatar_url,        -- 3
+	    enabled,           -- 4
+	    created_at,
+	    updated_at
+	) VALUES (
+	    ?,                 -- 1
+	    ?,                 -- 2
+	    ?,                 -- 3
+	    ?,                 -- 4
+	    CURRENT_TIMESTAMP,
+	    CURRENT_TIMESTAMP
+	)
+	RETURNING
+	    id,                -- 1
+	    reference_id,      -- 2
+	    COALESCE(username, ''), -- 3
+	    email,             -- 4
+	    COALESCE(avatar_url, ''), -- 5
+	    enabled            -- 6`
+
+	var ownerID int64
+	err := s.QueryRowRW(sqlInsertUser, "forumowner@example.com", "forumowner", "", true).Scan(&ownerID, new(string), new(string), new(string), new(string), new(bool))
+	if err != nil {
+		t.Fatalf("insert owner user error: %v", err)
+	}
+
+	// Create forum
+	forumExternal := "forum-ext-1"
+	f, err := s.CreateForum(forumExternal, 0, 0, ownerID, "Titulo", "Descricao", "img.png")
+	if err != nil {
+		t.Fatalf("CreateForum error: %v", err)
+	}
+	if f.ExternalID != forumExternal || f.Title != "Titulo" {
+		t.Errorf("forum fields mismatch: %+v", f)
+	}
+	if f.OwnerUserName != "forumowner" {
+		t.Errorf("forum OwnerUserName not filled: expected 'forumowner', got '%s'", f.OwnerUserName)
+	}
+
+	// Get forum by external id
+	fGet, err := s.GetForumByExternalID(forumExternal)
+	if err != nil || fGet == nil || fGet.ID != f.ID {
+		t.Fatalf("GetForumByExternalID mismatch: %v err=%v", fGet, err)
+	}
+
+	// Update forum
+	fUpdated, err := s.UpdateForum(forumExternal, "NovoTitulo", "NovaDesc", "new.png")
+	if err != nil {
+		t.Fatalf("UpdateForum error: %v", err)
+	}
+	if fUpdated.Title != "NovoTitulo" || fUpdated.Description != "NovaDesc" || fUpdated.ImageURL != "new.png" {
+		t.Errorf("forum not updated: %+v", fUpdated)
+	}
+
+	// List forums (pagination)
+	forums, err := s.ListForums(0, 10)
+	if err != nil || len(forums) == 0 {
+		t.Fatalf("ListForums expected at least 1, got %d err=%v", len(forums), err)
+	}
+
+	// Create threads
+	threadExternal1 := "thread-ext-1"
+	threadExternal2 := "thread-ext-2"
+	t1, err := s.CreateThread(f.ID, ownerID, "Thread 1", threadExternal1, "t1.png")
+	if err != nil {
+		t.Fatalf("CreateThread 1 error: %v", err)
+	}
+	if t1.OwnerUserName != "forumowner" {
+		t.Errorf("thread OwnerUserName not filled: expected 'forumowner', got '%s'", t1.OwnerUserName)
+	}
+	_, err = s.CreateThread(f.ID, ownerID, "Thread 2", threadExternal2, "t2.png")
+	if err != nil {
+		t.Fatalf("CreateThread 2 error: %v", err)
+	}
+
+	// Get thread by external id
+	tGet, err := s.GetThreadByExternalID(threadExternal1)
+	if err != nil || tGet == nil || tGet.ID != t1.ID {
+		t.Fatalf("GetThreadByExternalID mismatch: %v err=%v", tGet, err)
+	}
+
+	// List threads for forum
+	threads, err := s.ListThreadsByForumID(f.ID, 0, 10)
+	if err != nil || len(threads) < 2 {
+		t.Fatalf("ListThreadsByForumID expected >=2, got %d err=%v", len(threads), err)
+	}
+
+	// Update thread
+	tUpdated, err := s.UpdateThread(threadExternal2, "Thread 2 Updated", "t2-new.png")
+	if err != nil {
+		t.Fatalf("UpdateThread error: %v", err)
+	}
+	if tUpdated.Title != "Thread 2 Updated" || tUpdated.ImageURL != "t2-new.png" {
+		t.Errorf("thread not updated: %+v", tUpdated)
+	}
+
+	// Create posts in thread 1
+	postExternal1 := "post-ext-1"
+	p1, err := s.CreatePost(t1.ID, ownerID, "Conteudo 1", "<p>Conteudo 1</p>", postExternal1, nil)
+	if err != nil {
+		t.Fatalf("CreatePost 1 error: %v", err)
+	}
+	postExternal2 := "post-ext-2"
+	p2, err := s.CreatePost(t1.ID, ownerID, "Conteudo 2", "<p>Conteudo 2</p>", postExternal2, nil)
+	if err != nil {
+		t.Fatalf("CreatePost 2 error: %v", err)
+	}
+
+	// Update post 2
+	p2Updated, err := s.UpdatePost(p2.ID, "Conteudo 2 Alterado", "<p>Conteudo 2 Alterado</p>")
+	if err != nil {
+		t.Fatalf("UpdatePost error: %v", err)
+	}
+	if !strings.Contains(p2Updated.Content, "Alterado") {
+		t.Errorf("post content not updated: %+v", p2Updated)
+	}
+
+	// Get posts by thread (should include both)
+	posts, err := s.GetPostsByThreadID(t1.ID)
+	if err != nil || len(posts) < 2 {
+		t.Fatalf("GetPostsByThreadID expected >=2, got %d err=%v", len(posts), err)
+	}
+
+	// Delete first post
+	if err := s.DeletePost(p1.ID); err != nil {
+		t.Fatalf("DeletePost error: %v", err)
+	}
+
+	// Ensure posts list shrinks
+	postsAfter, err := s.GetPostsByThreadID(t1.ID)
+	if err != nil {
+		t.Fatalf("GetPostsByThreadID after delete error: %v", err)
+	}
+	if len(postsAfter) != len(posts)-1 {
+		t.Errorf("expected posts count %d after delete, got %d", len(posts)-1, len(postsAfter))
 	}
 }

@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="pt-BR" data-bs-theme="dark">
+  <head>
+    {{template "head" .}}
+  </head>
+
+  <body>
+    {{template "forum_navbar" .}}
+
+    <main class="container py-4 py-md-5">
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" class="mb-4">
+        <ol class="breadcrumb">
+          <li class="breadcrumb-item"><a href="/forum">Fóruns</a></li>
+          <li class="breadcrumb-item"><a href="/forum/{{.Forum.ExternalID}}">{{.Forum.Title}}</a></li>
+          <li class="breadcrumb-item active">Novo Tópico</li>
+        </ol>
+      </nav>
+
+      <!-- Page title -->
+      <h1 class="h3 mb-4">Criar Novo Tópico</h1>
+
+      <!-- Error alert -->
+      {{if .Error}}
+        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+          <strong>Erro:</strong> {{.Error}}
+          <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Fechar"></button>
+        </div>
+      {{end}}
+
+      <!-- Thread create form -->
+      <div class="card">
+        <div class="card-body">
+          <form method="POST" action="/forum/{{.Forum.ExternalID}}/thread" class="needs-validation" novalidate>
+            <!-- Title field -->
+            <div class="mb-3">
+              <label for="title" class="form-label">Título do Tópico</label>
+              <input type="text" class="form-control" id="title" name="title" required minlength="3" maxlength="255" placeholder="Ex: Como começar com Go?">
+              <div class="form-text">Mínimo de 3 caracteres, máximo de 255.</div>
+              <div class="invalid-feedback">Por favor, insira um título válido.</div>
+            </div>
+
+            <!-- Image URL field with insert button -->
+            <div class="mb-3">
+              <label for="imageURL" class="form-label">Imagem do Tópico (URL)</label>
+              <div class="input-group">
+                <input type="url" class="form-control" id="imageURL" name="imageURL" placeholder="https://exemplo.com/imagem.jpg">
+                <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#insertImageModal" title="Selecionar imagem">
+                  {{template "icon-image" .}}
+                </button>
+              </div>
+              <div id="forumImagePreview" class="mt-2"></div>
+              <div class="form-text">URL da imagem para o tópico.</div>
+            </div>
+
+            <!-- Content field -->
+            <div class="mb-3">
+              <label for="content" class="form-label">Conteúdo</label>
+              <textarea 
+                  class="form-control" 
+                  id="content" 
+                  name="content" 
+                  rows="8" 
+                  required 
+                  minlength="10" 
+                  data-provide="md-mini"
+                  data-preview-url="/api/markdown/preview"
+                  placeholder="Descreva sua pergunta ou tópico de discussão..."></textarea>
+              <div class="form-text">Mínimo de 10 caracteres.</div>
+              <div class="invalid-feedback">Por favor, insira um conteúdo válido.</div>
+            </div>
+
+            <!-- Form buttons -->
+            <div class="d-flex gap-2">
+              <button type="submit" class="btn btn-primary d-inline-flex align-items-center gap-2">
+                {{template "icon-pencil" .}}
+                <span>Criar Tópico</span>
+              </button>
+              <a href="/forum/{{.Forum.ExternalID}}" class="btn btn-secondary">Cancelar</a>
+            </div>
+          </form>
+        </div>
+      </div>
+    </main>
+
+    <!-- Insert media modals -->
+    {{template "insert_image_modal" .}}
+    {{template "insert_video_modal" .}}
+    {{template "insert_audio_modal" .}}
+
+    <footer>
+      {{template "footer" .}}
+    </footer>
+    {{template "scripts" .}}
+    <script defer src="/assets/forum-image-select.min.js?v={{ .Config.GitTag }}"></script>
+    <script defer src="/assets/md-mini.js?v={{ .Config.GitTag }}"></script>
+    <script defer src="/assets/md-insert-image.min.js?v={{ .Config.GitTag }}"></script>
+    <script defer src="/assets/md-insert-video.min.js?v={{ .Config.GitTag }}"></script>
+    <script defer src="/assets/md-insert-audio.min.js?v={{ .Config.GitTag }}"></script>
+  </body>
+</html>

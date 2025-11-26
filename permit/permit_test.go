@@ -6,7 +6,6 @@ import (
 
 	"edev/config"
 	"edev/db"
-	"edev/migration"
 )
 
 // initPermitsTestDB initializes a SQLite database and runs migrations.
@@ -23,7 +22,7 @@ func initPermitsTestDB(t *testing.T) {
 		t.Fatalf("db.New: %v", err)
 	}
 
-	if err := migration.Run(); err != nil {
+	if err := db.RunMigration(); err != nil {
 		t.Fatalf("migration.Run: %v", err)
 	}
 }
@@ -32,18 +31,18 @@ func TestCheckScopedThenGlobal(t *testing.T) {
 
 	initPermitsTestDB(t)
 
-	if err := db.Storage.Exec(`INSERT INTO edev_core_tenants (name) VALUES ('t1')`); err != nil {
+	if err := db.Storage.Exec(`INSERT INTO tenants (name) VALUES ('t1')`); err != nil {
 		t.Fatalf("insert tenant: %v", err)
 	}
-	if err := db.Storage.Exec(`INSERT INTO edev_core_users (email, created_at, updated_at) VALUES ('u@example.com', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`); err != nil {
+	if err := db.Storage.Exec(`INSERT INTO users (email, created_at, updated_at) VALUES ('u@example.com', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`); err != nil {
 		t.Fatalf("insert user: %v", err)
 	}
 
 	var tenantID, userID int64
-	if err := db.Storage.QueryRow(`SELECT id FROM edev_core_tenants WHERE name='t1'`).Scan(&tenantID); err != nil {
+	if err := db.Storage.QueryRow(`SELECT id FROM tenants WHERE name='t1'`).Scan(&tenantID); err != nil {
 		t.Fatalf("select tenant id: %v", err)
 	}
-	if err := db.Storage.QueryRow(`SELECT id FROM edev_core_users WHERE email='u@example.com'`).Scan(&userID); err != nil {
+	if err := db.Storage.QueryRow(`SELECT id FROM users WHERE email='u@example.com'`).Scan(&userID); err != nil {
 		t.Fatalf("select user id: %v", err)
 	}
 
@@ -75,18 +74,18 @@ func TestGrantAndRevokeUser(t *testing.T) {
 
 	initPermitsTestDB(t)
 
-	if err := db.Storage.Exec(`INSERT INTO edev_core_tenants (name) VALUES ('t2')`); err != nil {
+	if err := db.Storage.Exec(`INSERT INTO tenants (name) VALUES ('t2')`); err != nil {
 		t.Fatalf("insert tenant: %v", err)
 	}
-	if err := db.Storage.Exec(`INSERT INTO edev_core_users (email, created_at, updated_at) VALUES ('user2@example.com', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`); err != nil {
+	if err := db.Storage.Exec(`INSERT INTO users (email, created_at, updated_at) VALUES ('user2@example.com', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`); err != nil {
 		t.Fatalf("insert user: %v", err)
 	}
 
 	var tenantID, userID int64
-	if err := db.Storage.QueryRow(`SELECT id FROM edev_core_tenants WHERE name='t2'`).Scan(&tenantID); err != nil {
+	if err := db.Storage.QueryRow(`SELECT id FROM tenants WHERE name='t2'`).Scan(&tenantID); err != nil {
 		t.Fatalf("select tenant id: %v", err)
 	}
-	if err := db.Storage.QueryRow(`SELECT id FROM edev_core_users WHERE email='user2@example.com'`).Scan(&userID); err != nil {
+	if err := db.Storage.QueryRow(`SELECT id FROM users WHERE email='user2@example.com'`).Scan(&userID); err != nil {
 		t.Fatalf("select user id: %v", err)
 	}
 
@@ -95,7 +94,7 @@ func TestGrantAndRevokeUser(t *testing.T) {
 	}
 
 	var allowed int
-	if err := db.Storage.QueryRow(`SELECT allowed FROM edev_core_permits WHERE tenant_id=? AND user_id=? AND resource='forum.postar' AND scope='forum:f1'`, tenantID, userID).Scan(&allowed); err != nil {
+	if err := db.Storage.QueryRow(`SELECT allowed FROM permits WHERE tenant_id=? AND user_id=? AND resource='forum.postar' AND scope='forum:f1'`, tenantID, userID).Scan(&allowed); err != nil {
 		t.Fatalf("select permit: %v", err)
 	}
 	if allowed != 1 {
@@ -105,7 +104,7 @@ func TestGrantAndRevokeUser(t *testing.T) {
 	if err := RevokeUser(tenantID, userID, "forum.postar", "forum:f1"); err != nil {
 		t.Fatalf("RevokeUser: %v", err)
 	}
-	if err := db.Storage.QueryRow(`SELECT allowed FROM edev_core_permits WHERE tenant_id=? AND user_id=? AND resource='forum.postar' AND scope='forum:f1'`, tenantID, userID).Scan(&allowed); err != nil {
+	if err := db.Storage.QueryRow(`SELECT allowed FROM permits WHERE tenant_id=? AND user_id=? AND resource='forum.postar' AND scope='forum:f1'`, tenantID, userID).Scan(&allowed); err != nil {
 		t.Fatalf("select permit after revoke: %v", err)
 	}
 	if allowed != 0 {
@@ -117,22 +116,22 @@ func TestGrantAndRevokeGroup(t *testing.T) {
 
 	initPermitsTestDB(t)
 
-	if err := db.Storage.Exec(`INSERT INTO edev_core_tenants (name) VALUES ('t3')`); err != nil {
+	if err := db.Storage.Exec(`INSERT INTO tenants (name) VALUES ('t3')`); err != nil {
 		t.Fatalf("insert tenant: %v", err)
 	}
-	if err := db.Storage.Exec(`INSERT INTO edev_core_users (email, created_at, updated_at) VALUES ('user3@example.com', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`); err != nil {
+	if err := db.Storage.Exec(`INSERT INTO users (email, created_at, updated_at) VALUES ('user3@example.com', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`); err != nil {
 		t.Fatalf("insert user: %v", err)
 	}
 
 	var tenantID, userID int64
-	if err := db.Storage.QueryRow(`SELECT id FROM edev_core_tenants WHERE name='t3'`).Scan(&tenantID); err != nil {
+	if err := db.Storage.QueryRow(`SELECT id FROM tenants WHERE name='t3'`).Scan(&tenantID); err != nil {
 		t.Fatalf("select tenant id: %v", err)
 	}
-	if err := db.Storage.QueryRow(`SELECT id FROM edev_core_users WHERE email='user3@example.com'`).Scan(&userID); err != nil {
+	if err := db.Storage.QueryRow(`SELECT id FROM users WHERE email='user3@example.com'`).Scan(&userID); err != nil {
 		t.Fatalf("select user id: %v", err)
 	}
 
-	if err := db.Storage.Exec(`INSERT INTO edev_core_groups (
+	if err := db.Storage.Exec(`INSERT INTO groups (
 		tenant_id, -- 1
 		name
 	) VALUES (
@@ -144,13 +143,13 @@ func TestGrantAndRevokeGroup(t *testing.T) {
 
 	var groupID int64
 	if err := db.Storage.QueryRow(`SELECT id
-	FROM edev_core_groups
+	FROM groups
 	WHERE tenant_id = ?  -- 1
 	  AND name = 'g1'`, tenantID).Scan(&groupID); err != nil {
 		t.Fatalf("select group id: %v", err)
 	}
 
-	if err := db.Storage.Exec(`INSERT INTO edev_core_group_members (
+	if err := db.Storage.Exec(`INSERT INTO group_members (
 		tenant_id, -- 1
 		group_id,  -- 2
 		user_id    -- 3
@@ -191,22 +190,22 @@ func TestListUserPermits(t *testing.T) {
 
 	initPermitsTestDB(t)
 
-	if err := db.Storage.Exec(`INSERT INTO edev_core_tenants (name) VALUES ('t4')`); err != nil {
+	if err := db.Storage.Exec(`INSERT INTO tenants (name) VALUES ('t4')`); err != nil {
 		t.Fatalf("insert tenant: %v", err)
 	}
-	if err := db.Storage.Exec(`INSERT INTO edev_core_users (email, created_at, updated_at) VALUES ('user4@example.com', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`); err != nil {
+	if err := db.Storage.Exec(`INSERT INTO users (email, created_at, updated_at) VALUES ('user4@example.com', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`); err != nil {
 		t.Fatalf("insert user: %v", err)
 	}
 
 	var tenantID, userID int64
-	if err := db.Storage.QueryRow(`SELECT id FROM edev_core_tenants WHERE name='t4'`).Scan(&tenantID); err != nil {
+	if err := db.Storage.QueryRow(`SELECT id FROM tenants WHERE name='t4'`).Scan(&tenantID); err != nil {
 		t.Fatalf("select tenant id: %v", err)
 	}
-	if err := db.Storage.QueryRow(`SELECT id FROM edev_core_users WHERE email='user4@example.com'`).Scan(&userID); err != nil {
+	if err := db.Storage.QueryRow(`SELECT id FROM users WHERE email='user4@example.com'`).Scan(&userID); err != nil {
 		t.Fatalf("select user id: %v", err)
 	}
 
-	if err := db.Storage.Exec(`INSERT INTO edev_core_groups (
+	if err := db.Storage.Exec(`INSERT INTO groups (
 		tenant_id, -- 1
 		name
 	) VALUES (
@@ -218,13 +217,13 @@ func TestListUserPermits(t *testing.T) {
 
 	var groupID int64
 	if err := db.Storage.QueryRow(`SELECT id
-	FROM edev_core_groups
+	FROM groups
 	WHERE tenant_id = ?  -- 1
 	  AND name = 'g2'`, tenantID).Scan(&groupID); err != nil {
 		t.Fatalf("select group id: %v", err)
 	}
 
-	if err := db.Storage.Exec(`INSERT INTO edev_core_group_members (
+	if err := db.Storage.Exec(`INSERT INTO group_members (
 		tenant_id, -- 1
 		group_id,  -- 2
 		user_id    -- 3

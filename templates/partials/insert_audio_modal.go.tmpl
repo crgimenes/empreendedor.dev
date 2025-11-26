@@ -1,0 +1,63 @@
+{{define "insert_audio_modal"}}
+<div class="modal fade" id="insertAudioModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Inserir Áudio</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+      </div>
+      <div class="modal-body">
+        <!-- Audio list -->
+        <div class="mb-4">
+          <label class="form-label">Seus Áudios (Mais Recentes Primeiro)</label>
+          <div id="audioList" style="max-height: 300px; overflow-y: auto; border: 1px solid var(--bs-border-color); border-radius: 0.375rem; padding: 0.5rem;">
+            <div class="text-center text-body-secondary py-4">
+              <small>Carregando áudios...</small>
+            </div>
+          </div>
+        </div>
+
+        <!-- Divider -->
+        <div class="mb-4">
+          <small class="text-body-secondary d-block text-center">ou</small>
+        </div>
+
+        <!-- Upload new audio -->
+        <div class="mb-3">
+          <label class="form-label">Fazer Upload de Novo Áudio</label>
+          <form id="uploadAudioForm" enctype="multipart/form-data" class="needs-validation" novalidate>
+            <div class="mb-3">
+              <input class="form-control" type="file" id="audioFileInput" name="file" accept="audio/*" required>
+              <small class="form-text text-body-secondary">Formatos: MP3, OGG, WAV, FLAC (máx. 500 MB)</small>
+            </div>
+
+            <div class="mb-3">
+              <label for="audioDescription" class="form-label">Descrição (opcional)</label>
+              <textarea class="form-control" id="audioDescription" name="description" rows="2" placeholder="Descreva o áudio..." maxlength="500"></textarea>
+              <small class="form-text text-body-secondary">Máximo 500 caracteres</small>
+            </div>
+
+            <div id="uploadAudioStatus" class="mb-3"></div>
+
+            <button type="submit" class="btn btn-primary w-100" id="uploadAudioBtn">Fazer Upload</button>
+          </form>
+        </div>
+
+        <!-- Divider -->
+        <div class="mb-3">
+          <small class="text-body-secondary d-block text-center">ou</small>
+        </div>
+
+        <!-- URL fallback -->
+        <div class="mb-0">
+          <label class="form-label">Inserir URL Direta</label>
+          <div class="input-group">
+            <input type="url" class="form-control" id="audioUrlInput" placeholder="https://exemplo.com/audio.mp3">
+            <button class="btn btn-outline-secondary" type="button" id="insertUrlAudioBtn">Inserir</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{{end}}

@@ -21,6 +21,8 @@ type Config struct {
 	GithubOAuthEnabled  bool
 	ResendAPIKey        string
 	SessionDuration     time.Duration
+	SiteDescription     string
+	SiteTitle           string
 	UploadPath          string // file upload storage path (temporary before processing)
 	XClientID           string
 	XClientSecret       string
@@ -29,7 +31,9 @@ type Config struct {
 
 var Cfg = &Config{
 	Addrs:           ":3210",
-	BaseURL:         "https://empreendedor.dev",
+	BaseURL:         "http://localhost:3210",
+	SiteTitle:       "edev",
+	SiteDescription: "edev",
 	GitTag:          "dev",
 	DBFile:          "edev.db",
 	SessionDuration: 10 * 24 * time.Hour, // 10 days

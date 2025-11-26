@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="pt-BR" data-bs-theme="dark">
+  <head>
+    {{template "head" .}}
+  </head>
+
+  <body>
+    {{template "forum_navbar" .}}
+
+    <main class="container py-4 py-md-5">
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" class="mb-4">
+        <ol class="breadcrumb">
+          <li class="breadcrumb-item"><a href="/forum">Fóruns</a></li>
+          <li class="breadcrumb-item active">{{.Forum.Title}}</li>
+        </ol>
+      </nav>
+
+      <!-- Forum header with image, title, and metadata -->
+      <div class="card mb-4">
+        {{if .Forum.ImageURL}}
+          <img src="{{.Forum.ImageURL}}" alt="{{.Forum.Title}}" class="card-img-top" style="height: 250px; width: 100%; object-fit: contain;">
+        {{end}}
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
+            <div>
+              <h1 class="card-title h3 mb-2">{{.Forum.Title}}</h1>
+              <p class="card-text text-body-secondary mb-0">{{.Forum.Description}}</p>
+            </div>
+            {{if eq .Forum.OwnerUserID .User.ID}}
+              <a href="/forum/{{.Forum.ExternalID}}/edit" class="btn btn-sm btn-outline-secondary" style="width: 32px; height: 32px; min-width: 32px; min-height: 32px; padding: 0; display: flex; align-items: center; justify-content: center;" title="Editar">
+                {{template "icon-pencil" .}}
+              </a>
+            {{end}}
+          </div>
+          <div class="d-flex flex-column flex-md-row gap-3 small text-body-secondary">
+            <span>Criador: <strong>{{.Forum.OwnerUserName}}</strong></span>
+            <span>Criado em: <strong>{{.Forum.CreatedAt.Format "2006-01-02 15:04"}}</strong></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Create thread button -->
+      {{if .Authed}}
+        <div class="mb-4">
+          <a href="/forum/{{.Forum.ExternalID}}/thread/create" class="btn btn-primary d-inline-flex align-items-center gap-2">
+            {{template "icon-plus" .}}
+            <span>Novo Tópico</span>
+          </a>
+        </div>
+      {{end}}
+
+      <!-- Threads list -->
+      <section aria-label="Lista de tópicos">
+        <div id="thread-list" class="row row-cols-1 g-3">
+          {{template "thread_list" .}}
+        </div>
+      </section>
+
+      <!-- Pagination sentinel for infinite scroll -->
+      {{if .HasMore}}
+        <div id="pagination-sentinel"
+             hx-get="/forum/{{.Forum.ExternalID}}/threads"
+             hx-trigger="revealed"
+             hx-target="#thread-list"
+             hx-swap="beforeend"
+             hx-include="[data-pagination]"
+             data-pagination="true"
+             data-offset="{{.NextOffset}}"
+             data-limit="{{.Limit}}">
+        </div>
+      {{end}}
+    </main>
+
+    <footer>
+      {{template "footer" .}}
+    </footer>
+    {{template "scripts" .}}
+    <!-- Page specific scripts -->
+    <script defer src="/assets/htmx.min.js?v={{ .Config.GitTag }}"></script>
+  </body>
+</html>

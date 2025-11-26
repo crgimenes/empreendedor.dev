@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="pt-BR" data-bs-theme="dark">
+  <head>
+    {{template "head" .}}
+  </head>
+
+  <body>
+    {{template "forum_navbar" .}}
+
+    <main class="container py-4 py-md-5">
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" class="mb-4">
+        <ol class="breadcrumb">
+          <li class="breadcrumb-item"><a href="/forum">Fóruns</a></li>
+          <li class="breadcrumb-item active">Novo Fórum</li>
+        </ol>
+      </nav>
+
+      <!-- Header with image preview -->
+      <div class="mb-4 d-flex align-items-start gap-3">
+        <div class="flex-grow-1">
+          <h1 class="h3 mb-2">Criar Novo Fórum</h1>
+          <p class="text-body-secondary">Configure os detalhes do seu novo fórum</p>
+        </div>
+        <div id="headerForumImagePreview" style="display: none; flex-shrink: 0;">
+          <img id="headerForumImage" src="" alt="Imagem do fórum" style="width: 80px; height: 80px; object-fit: cover; border-radius: 50%; border: 2px solid var(--bs-border-color);">
+        </div>
+      </div>
+
+      <!-- Error Alert -->
+      {{if .Error}}
+        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+          {{.Error}}
+          <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+      {{end}}
+
+      <!-- Form -->
+      <div class="row">
+        <div class="col-lg-6">
+          <form method="POST" class="needs-validation">
+            <div class="mb-3">
+              <label for="title" class="form-label">Título</label>
+              <input 
+                type="text" 
+                class="form-control" 
+                id="title" 
+                name="title" 
+                placeholder="Ex: Discussões Gerais"
+                required
+                minlength="3"
+                maxlength="255"
+              >
+              <small class="form-text text-body-secondary">Mínimo 3 caracteres</small>
+            </div>
+
+            <div class="mb-3">
+              <label for="description" class="form-label">Descrição</label>
+              <textarea 
+                class="form-control" 
+                id="description" 
+                name="description" 
+                rows="4"
+                placeholder="Descreva o propósito deste fórum..."
+                maxlength="1000"
+              ></textarea>
+              <small class="form-text text-body-secondary">Opcional - máximo 1000 caracteres</small>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label">Imagem do Fórum</label>
+              <div class="input-group">
+                <input 
+                  type="text" 
+                  class="form-control" 
+                  id="imageURL" 
+                  name="imageURL" 
+                  placeholder="URL da imagem (opcional)..."
+                  readonly
+                >
+                <button 
+                  type="button" 
+                  class="btn btn-outline-secondary"
+                  id="forumImageBtn"
+                  data-bs-toggle="modal"
+                  data-bs-target="#insertImageModal"
+                >
+                  {{template "icon-image" .}}
+                </button>
+              </div>
+              <div id="forumImagePreview" class="mt-2"></div>
+              <small class="form-text text-body-secondary">Opcional - clique no botão para escolher ou fazer upload de uma imagem</small>
+            </div>
+
+            <div class="d-grid gap-2 d-sm-flex">
+              <button type="submit" class="btn btn-primary d-inline-flex align-items-center gap-2">
+                {{template "icon-plus" .}}
+                <span>Criar Fórum</span>
+              </button>
+              <a href="/forum" class="btn btn-secondary">Cancelar</a>
+            </div>
+          </form>
+        </div>
+      </div>
+    </main>
+
+    {{template "insert_image_modal" .}}
+
+    {{template "footer" .}}
+    {{template "scripts" .}}
+    <script src="/assets/forum-image-select.min.js?v={{ .Config.GitTag }}" defer></script>
+  </body>
+</html>

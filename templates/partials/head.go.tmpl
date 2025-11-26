@@ -2,7 +2,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="theme-color" content="#000000" />
-<meta name="description" content="empreendedor.dev" />
+<meta name="description" content=".Config.SiteDescription" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="mobile-web-app-capable" content="yes">
@@ -25,5 +25,6 @@
 />
 <link rel="stylesheet" href="/assets/bootstrap/css/bootstrap.min.css?v={{ .Config.GitTag }}" />
 <link rel="stylesheet" href="/assets/style.css?v={{ .Config.GitTag }}" />
-<title>empreendedor.dev</title>
+<script src="/assets/htmx.min.js?v={{ .Config.GitTag }}"></script>
+<title>{{ .Config.SiteTitle }}</title>
 {{end}}

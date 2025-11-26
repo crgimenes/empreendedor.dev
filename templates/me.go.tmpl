@@ -69,7 +69,7 @@
                             <div class="mb-3">
                                 {{if .User.AvatarURL}}
                                     <img src="{{.User.AvatarURL}}" alt="Avatar do usuario" 
-                                        class="img-thumbnail mt-2" style="max-width: 100px;">
+                                        class="rounded-circle mt-2" style="object-fit: cover; width: 100px; height: 100px; aspect-ratio: 1/1;">
                                 {{end}}
                             </div>
 

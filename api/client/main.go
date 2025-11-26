@@ -16,17 +16,17 @@ func udsHTTPClient(sockPath string) *http.Client {
 		KeepAlive: 60 * time.Second,
 	}
 	transport := &http.Transport{
-		// Reuso agressivo de conexão
+		// Aggressive connection reuse
 		MaxIdleConns:        100,
 		MaxIdleConnsPerHost: 100,
 		IdleConnTimeout:     90 * time.Second,
-		DisableCompression:  false, // deixe true para binários; false para JSON grandes
+		DisableCompression:  false, // set true for binaries; false for large JSON
 
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			// Ignora addr; conecta ao socket Unix
 			return dialer.DialContext(ctx, "unix", sockPath)
 		},
-		// TLS desnecessário no UDS
+		// TLS not needed for UDS
 	}
 	return &http.Client{
 		Transport: transport,
@@ -39,7 +39,7 @@ func main() {
 
 	// Use host “falso” estável; precisa ser consistente para hit do pool.
 	req, _ := http.NewRequest("GET", "http://unix/api/health", nil)
-	// Define Host lógico (opcional, caso o servidor distinga virtual hosts)
+	// Set logical Host (optional, if server distinguishes virtual hosts)
 	req.Host = "internal.local"
 
 	resp, err := c.Do(req)

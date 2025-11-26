@@ -9,9 +9,13 @@ import (
 	"testing"
 	"time"
 
+	"edev/auth"
 	"edev/config"
 	"edev/db"
+	"edev/filemanager"
+	"edev/handlers"
 	"edev/session"
+	"edev/templates"
 	"edev/utils"
 )
 
@@ -35,6 +39,19 @@ func init() {
 	session.EnableInsecureCookie()
 }
 
+func newTestHandlers() *handlers.Handlers {
+	return handlers.New(handlers.Dependencies{
+		Config:    config.Cfg,
+		Templates: templates.ExecuteTemplate,
+		FileUtilities: handlers.FileUtilities{
+			Validate:     filemanager.ValidateFile,
+			DataPath:     filemanager.DataFilePath,
+			SaveMetadata: filemanager.SaveFileMetadata,
+			NewFilename:  filemanager.FileName,
+		},
+	})
+}
+
 // initTestDBForHandler initializes a test database with proper schema for handler tests
 func initTestDBForHandler(t *testing.T) *db.SQLite {
 	t.Helper()
@@ -49,7 +66,7 @@ func initTestDBForHandler(t *testing.T) *db.SQLite {
 
 	// Create schema - using simplified statements that work with single Exec calls
 	statements := []string{
-		`CREATE TABLE IF NOT EXISTS edev_core_users (
+		`CREATE TABLE IF NOT EXISTS users (
 			id INTEGER PRIMARY KEY,
 			reference_id TEXT NOT NULL UNIQUE DEFAULT "",
 			username TEXT UNIQUE COLLATE NOCASE,
@@ -59,15 +76,15 @@ func initTestDBForHandler(t *testing.T) *db.SQLite {
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)`,
-		`CREATE INDEX IF NOT EXISTS idx_edev_core_users_username_nocase
-			ON edev_core_users(LOWER(username)) WHERE username IS NOT NULL`,
-		`CREATE INDEX IF NOT EXISTS idx_edev_core_users_email_nocase
-			ON edev_core_users(LOWER(email)) WHERE email IS NOT NULL`,
-		`CREATE INDEX IF NOT EXISTS idx_edev_core_users_enabled ON edev_core_users(enabled)`,
-		`CREATE INDEX IF NOT EXISTS idx_edev_core_users_reference_id ON edev_core_users(reference_id)`,
-		`CREATE TABLE IF NOT EXISTS edev_core_identities (
+		`CREATE INDEX IF NOT EXISTS idx_users_username_nocase
+			ON users(LOWER(username)) WHERE username IS NOT NULL`,
+		`CREATE INDEX IF NOT EXISTS idx_users_email_nocase
+			ON users(LOWER(email)) WHERE email IS NOT NULL`,
+		`CREATE INDEX IF NOT EXISTS idx_users_enabled ON users(enabled)`,
+		`CREATE INDEX IF NOT EXISTS idx_users_reference_id ON users(reference_id)`,
+		`CREATE TABLE IF NOT EXISTS identities (
 			id INTEGER PRIMARY KEY,
-			user_id INTEGER NOT NULL REFERENCES edev_core_users(id) ON DELETE CASCADE,
+			user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 			provider TEXT NOT NULL,
 			provider_uid TEXT NOT NULL,
 			avatar_url TEXT,
@@ -75,21 +92,21 @@ func initTestDBForHandler(t *testing.T) *db.SQLite {
 			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			UNIQUE(provider, provider_uid)
 		)`,
-		`CREATE INDEX IF NOT EXISTS idx_edev_core_identities_user_id ON edev_core_identities(user_id)`,
-		`CREATE TRIGGER IF NOT EXISTS edev_core_users_set_updated_at
-		AFTER UPDATE OF username, email, enabled, avatar_url ON edev_core_users
+		`CREATE INDEX IF NOT EXISTS idx_identities_user_id ON identities(user_id)`,
+		`CREATE TRIGGER IF NOT EXISTS users_set_updated_at
+		AFTER UPDATE OF username, email, enabled, avatar_url ON users
 		BEGIN
-			UPDATE edev_core_users SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
+			UPDATE users SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
 		END`,
-		`CREATE TRIGGER IF NOT EXISTS edev_core_identities_set_updated_at
-		AFTER UPDATE OF user_id, provider, provider_uid, avatar_url ON edev_core_identities
+		`CREATE TRIGGER IF NOT EXISTS identities_set_updated_at
+		AFTER UPDATE OF user_id, provider, provider_uid, avatar_url ON identities
 		BEGIN
-			UPDATE edev_core_identities SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
+			UPDATE identities SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
 		END`,
-		`CREATE TRIGGER IF NOT EXISTS edev_core_users_reference_uuid
-		AFTER INSERT ON edev_core_users
+		`CREATE TRIGGER IF NOT EXISTS users_reference_uuid
+		AFTER INSERT ON users
 		BEGIN
-		  UPDATE edev_core_users
+		  UPDATE users
 		  SET reference_id = (
 			select substr(u,1,8)||'-'||
 			substr(u,9,4)||'-4'||
@@ -102,6 +119,20 @@ func initTestDBForHandler(t *testing.T) *db.SQLite {
 			)
 		  WHERE id = NEW.id;
 		END`,
+		`CREATE TABLE IF NOT EXISTS forum (
+			id INTEGER PRIMARY KEY,
+			external_id TEXT NOT NULL UNIQUE,
+			tenant_id INTEGER DEFAULT 1,
+			workspace_id INTEGER DEFAULT 1,
+			owner_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			title TEXT NOT NULL,
+			description TEXT DEFAULT '',
+			image_url TEXT DEFAULT '',
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_forum_external_id ON forum(external_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_forum_owner_user_id ON forum(owner_user_id)`,
 	}
 
 	for _, stmt := range statements {
@@ -128,14 +159,16 @@ func TestIndexHandlerNotAuthenticated(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
 
-	indexHandler(w, req)
+	h := newTestHandlers()
+
+	h.Home(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", w.Code)
 	}
 
 	body := w.Body.String()
-	if !strings.Contains(body, "Bem-vindo ao empreendedor.dev") {
+	if !strings.Contains(body, "Bem-vindo") {
 		t.Fatalf("expected welcome message in body, got: %s", body)
 	}
 
@@ -167,7 +200,9 @@ func TestIndexHandlerAuthenticated(t *testing.T) {
 	setSessionCookie(req, sid)
 
 	w := httptest.NewRecorder()
-	indexHandler(w, req)
+	h := newTestHandlers()
+
+	h.Home(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", w.Code)
@@ -204,7 +239,9 @@ func TestLoginPageHandler(t *testing.T) {
 		}
 	}()
 
-	loginPageHandler(w, req)
+	h := newTestHandlers()
+
+	h.LoginPage(w, req)
 
 	// Accept both 200 (successful render) and other codes
 	// The important thing is that we don't panic
@@ -229,7 +266,9 @@ func TestLoginPageHandlerRedirectIfAuthenticated(t *testing.T) {
 	setSessionCookie(req, sid)
 
 	w := httptest.NewRecorder()
-	loginPageHandler(w, req)
+	h := newTestHandlers()
+
+	h.LoginPage(w, req)
 
 	if w.Code != http.StatusFound {
 		t.Fatalf("expected redirect status 302, got %d", w.Code)
@@ -246,7 +285,9 @@ func TestMeHandlerNotAuthenticated(t *testing.T) {
 	req := httptest.NewRequest("GET", "/me", nil)
 	w := httptest.NewRecorder()
 
-	meHandler(w, req)
+	h := newTestHandlers()
+
+	h.Profile(w, req)
 
 	if w.Code != http.StatusFound {
 		t.Fatalf("expected redirect status 302, got %d", w.Code)
@@ -282,7 +323,9 @@ func TestMeHandlerGETAuthenticated(t *testing.T) {
 		}
 	}()
 
-	meHandler(w, req)
+	h := newTestHandlers()
+
+	h.Profile(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", w.Code)
@@ -305,7 +348,7 @@ func TestLogoutHandler(t *testing.T) {
 	setSessionCookie(req, sid)
 
 	w := httptest.NewRecorder()
-	logoutHandler(w, req)
+	auth.Logout(w, req)
 
 	if w.Code != http.StatusFound {
 		t.Fatalf("expected redirect status 302, got %d", w.Code)
@@ -341,6 +384,8 @@ func TestHealthHandler(t *testing.T) {
 
 // TestTemplateRendering tests that templates can be rendered without errors
 func TestTemplateRendering(t *testing.T) {
+	h := newTestHandlers()
+
 	tests := []struct {
 		name    string
 		handler http.HandlerFunc
@@ -349,13 +394,13 @@ func TestTemplateRendering(t *testing.T) {
 	}{
 		{
 			name:    "index page",
-			handler: indexHandler,
+			handler: h.Home,
 			method:  "GET",
 			path:    "/",
 		},
 		{
 			name:    "login page",
-			handler: loginPageHandler,
+			handler: h.LoginPage,
 			method:  "GET",
 			path:    "/login",
 		},
@@ -396,7 +441,9 @@ func TestTemplatesParseCorrectly(t *testing.T) {
 		}
 	}()
 
-	indexHandler(w, req)
+	h := newTestHandlers()
+
+	h.Home(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected template rendering to succeed, got status %d", w.Code)
@@ -451,8 +498,10 @@ func TestMeHandlerPOSTUsernameConflict(t *testing.T) {
 
 	w := httptest.NewRecorder()
 
+	h := newTestHandlers()
+
 	// Call handler
-	meHandler(w, req)
+	h.Profile(w, req)
 
 	// Should return 200 (re-rendered form with error)
 	if w.Code != http.StatusOK {
@@ -528,8 +577,10 @@ func TestMeHandlerPOSTUsernameConflictCaseInsensitive(t *testing.T) {
 
 	w := httptest.NewRecorder()
 
+	h := newTestHandlers()
+
 	// Call handler
-	meHandler(w, req)
+	h.Profile(w, req)
 
 	// Should return 200 (re-rendered form with error)
 	if w.Code != http.StatusOK {
@@ -546,19 +597,186 @@ func TestMeHandlerPOSTUsernameConflictCaseInsensitive(t *testing.T) {
 // BenchmarkIndexHandler benchmarks the index handler
 func BenchmarkIndexHandler(b *testing.B) {
 	req := httptest.NewRequest("GET", "/", nil)
+	h := newTestHandlers()
 
 	for i := 0; i < b.N; i++ {
 		w := httptest.NewRecorder()
-		indexHandler(w, req)
+		h.Home(w, req)
 	}
 }
 
 // BenchmarkLoginPageHandler benchmarks the login page handler
 func BenchmarkLoginPageHandler(b *testing.B) {
 	req := httptest.NewRequest("GET", "/login", nil)
+	h := newTestHandlers()
 
 	for i := 0; i < b.N; i++ {
 		w := httptest.NewRecorder()
-		loginPageHandler(w, req)
+		h.LoginPage(w, req)
+	}
+}
+
+// TestUpdateForum tests that forum updates are saved correctly to database
+func TestUpdateForum(t *testing.T) {
+	testDB := initTestDBForHandler(t)
+	db.Storage = testDB
+
+	// Create a test user in the database
+	err := testDB.Exec(`INSERT INTO users (id, username, email, enabled, avatar_url) VALUES (201, 'updateuser', 'update@example.com', 1, '')`)
+	if err != nil {
+		t.Fatalf("failed to insert test user: %v", err)
+	}
+
+	// Create a test forum
+	externalID := utils.NewOpaqueID()
+	_, err = testDB.CreateForum(externalID, 0, 0, 201, "Original Title", "Original Description", "https://example.com/old.jpg")
+	if err != nil {
+		t.Fatalf("Failed to create forum: %v", err)
+	}
+
+	// Update the forum
+	updated, err := testDB.UpdateForum(externalID, "Updated Title", "Updated Description", "https://example.com/new.jpg")
+	if err != nil {
+		t.Fatalf("Failed to update forum: %v", err)
+	}
+
+	// Verify returned forum has updated values
+	if updated.Title != "Updated Title" {
+		t.Errorf("Expected title 'Updated Title', got '%s'", updated.Title)
+	}
+
+	if updated.Description != "Updated Description" {
+		t.Errorf("Expected description 'Updated Description', got '%s'", updated.Description)
+	}
+
+	if updated.ImageURL != "https://example.com/new.jpg" {
+		t.Errorf("Expected imageURL 'https://example.com/new.jpg', got '%s'", updated.ImageURL)
+	}
+
+	// Verify persisted in database by fetching again
+	fetched, err := testDB.GetForumByExternalID(externalID)
+	if err != nil {
+		t.Fatalf("Failed to fetch forum: %v", err)
+	}
+
+	if fetched.Title != "Updated Title" {
+		t.Errorf("Expected persisted title 'Updated Title', got '%s'", fetched.Title)
+	}
+
+	if fetched.Description != "Updated Description" {
+		t.Errorf("Expected persisted description 'Updated Description', got '%s'", fetched.Description)
+	}
+
+	if fetched.ImageURL != "https://example.com/new.jpg" {
+		t.Errorf("Expected persisted imageURL 'https://example.com/new.jpg', got '%s'", fetched.ImageURL)
+	}
+}
+
+// TestUpdateForumPartialUpdate tests that UpdateForum can update individual fields
+func TestUpdateForumPartialUpdate(t *testing.T) {
+	testDB := initTestDBForHandler(t)
+	db.Storage = testDB
+
+	// Create a test user
+	err := testDB.Exec(`INSERT INTO users (id, username, email, enabled, avatar_url) VALUES (202, 'partialuser', 'partial@example.com', 1, '')`)
+	if err != nil {
+		t.Fatalf("failed to insert test user: %v", err)
+	}
+
+	// Create a test forum
+	externalID := utils.NewOpaqueID()
+	_, err = testDB.CreateForum(externalID, 0, 0, 202, "Original Title", "Original Description", "https://example.com/image.jpg")
+	if err != nil {
+		t.Fatalf("Failed to create forum: %v", err)
+	}
+
+	// Update only title, keep description and image
+	updated, err := testDB.UpdateForum(externalID, "New Title Only", "Original Description", "https://example.com/image.jpg")
+	if err != nil {
+		t.Fatalf("Failed to update forum: %v", err)
+	}
+
+	if updated.Title != "New Title Only" {
+		t.Errorf("Expected title 'New Title Only', got '%s'", updated.Title)
+	}
+
+	if updated.Description != "Original Description" {
+		t.Errorf("Expected description to remain 'Original Description', got '%s'", updated.Description)
+	}
+
+	if updated.ImageURL != "https://example.com/image.jpg" {
+		t.Errorf("Expected imageURL to remain 'https://example.com/image.jpg', got '%s'", updated.ImageURL)
+	}
+}
+
+// TestUpdateForumEmptyImageURL tests that UpdateForum handles empty image URLs
+func TestUpdateForumEmptyImageURL(t *testing.T) {
+	testDB := initTestDBForHandler(t)
+	db.Storage = testDB
+
+	// Create a test user
+	err := testDB.Exec(`INSERT INTO users (id, username, email, enabled, avatar_url) VALUES (203, 'emptyimguser', 'emptyimg@example.com', 1, '')`)
+	if err != nil {
+		t.Fatalf("failed to insert test user: %v", err)
+	}
+
+	// Create a test forum with image
+	externalID := utils.NewOpaqueID()
+	_, err = testDB.CreateForum(externalID, 0, 0, 203, "Forum with Image", "Has Image", "https://example.com/image.jpg")
+	if err != nil {
+		t.Fatalf("Failed to create forum: %v", err)
+	}
+
+	// Update to remove image
+	updated, err := testDB.UpdateForum(externalID, "Forum with Image", "Has Image", "")
+	if err != nil {
+		t.Fatalf("Failed to update forum: %v", err)
+	}
+
+	if updated.ImageURL != "" {
+		t.Errorf("Expected imageURL to be empty, got '%s'", updated.ImageURL)
+	}
+}
+
+// TestUpdateForumOwnershipPreserved tests that UpdateForum preserves owner and other fields
+func TestUpdateForumOwnershipPreserved(t *testing.T) {
+	testDB := initTestDBForHandler(t)
+	db.Storage = testDB
+
+	// Create a test user
+	err := testDB.Exec(`INSERT INTO users (id, username, email, enabled, avatar_url) VALUES (204, 'ownertest', 'owner@example.com', 1, '')`)
+	if err != nil {
+		t.Fatalf("failed to insert test user: %v", err)
+	}
+
+	// Create a test forum
+	externalID := utils.NewOpaqueID()
+	forum, err := testDB.CreateForum(externalID, 0, 0, 204, "Test Forum", "Test Description", "")
+	if err != nil {
+		t.Fatalf("Failed to create forum: %v", err)
+	}
+
+	originalID := forum.ID
+	originalOwnerID := forum.OwnerUserID
+	originalCreatedAt := forum.CreatedAt
+
+	// Update the forum
+	updated, err := testDB.UpdateForum(externalID, "New Title", "New Description", "https://example.com/new.jpg")
+	if err != nil {
+		t.Fatalf("Failed to update forum: %v", err)
+	}
+
+	// Verify ID and ownership preserved
+	if updated.ID != originalID {
+		t.Errorf("Forum ID should not change, was %d, now %d", originalID, updated.ID)
+	}
+
+	if updated.OwnerUserID != originalOwnerID {
+		t.Errorf("Forum owner should not change, was %d, now %d", originalOwnerID, updated.OwnerUserID)
+	}
+
+	// Verify CreatedAt is preserved (UpdatedAt may change)
+	if updated.CreatedAt != originalCreatedAt {
+		t.Errorf("CreatedAt should not change")
 	}
 }

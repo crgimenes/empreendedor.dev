@@ -27,7 +27,7 @@
               <h1 class="card-title">Bem-vindo, {{.User.Username}}!</h1>
               <p class="card-text text-muted">Email: {{.User.Email}}</p>
               {{if .User.AvatarURL}}
-                <img src="{{.User.AvatarURL}}" alt="Avatar" class="img-thumbnail mb-3" style="max-width: 150px;">
+                <img src="{{.User.AvatarURL}}" alt="Avatar" class="rounded-circle mb-3" style="object-fit: cover; width: 150px; height: 150px; aspect-ratio: 1/1;">
               {{end}}
               <p class="mb-3">
                 {{if .User.Enabled}}

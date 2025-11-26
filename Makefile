@@ -1,4 +1,4 @@
-BINARY_NAME=$(shell basename $(shell pwd))
+BINARY_NAME=edev
 
 export CGO_ENABLED=0
 GIT_TAG := $(shell git describe --tags --always)
@@ -22,4 +22,11 @@ dev:
 
 clean:
 	rm -f $(BINARY_NAME) $(BINARY_NAME)-*
+
+clean-all: clean
+	rm -rf edev.db-shm edev.db-wal edev.db sessions.gob data
+	rm -f *.log
+	rm -rf dist
+
+
 

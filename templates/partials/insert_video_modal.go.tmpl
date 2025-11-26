@@ -1,0 +1,63 @@
+{{define "insert_video_modal"}}
+<div class="modal fade" id="insertVideoModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Inserir Vídeo</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+      </div>
+      <div class="modal-body">
+        <!-- Video list -->
+        <div class="mb-4">
+          <label class="form-label">Seus Vídeos (Mais Recentes Primeiro)</label>
+          <div id="videoList" style="max-height: 300px; overflow-y: auto; border: 1px solid var(--bs-border-color); border-radius: 0.375rem; padding: 0.5rem;">
+            <div class="text-center text-body-secondary py-4">
+              <small>Carregando vídeos...</small>
+            </div>
+          </div>
+        </div>
+
+        <!-- Divider -->
+        <div class="mb-4">
+          <small class="text-body-secondary d-block text-center">ou</small>
+        </div>
+
+        <!-- Upload new video -->
+        <div class="mb-3">
+          <label class="form-label">Fazer Upload de Novo Vídeo</label>
+          <form id="uploadVideoForm" enctype="multipart/form-data" class="needs-validation" novalidate>
+            <div class="mb-3">
+              <input class="form-control" type="file" id="videoFileInput" name="file" accept="video/*" required>
+              <small class="form-text text-body-secondary">Formatos: MP4, WebM, OGG, MOV (máx. 500 MB)</small>
+            </div>
+
+            <div class="mb-3">
+              <label for="videoDescription" class="form-label">Descrição (opcional)</label>
+              <textarea class="form-control" id="videoDescription" name="description" rows="2" placeholder="Descreva o vídeo..." maxlength="500"></textarea>
+              <small class="form-text text-body-secondary">Máximo 500 caracteres</small>
+            </div>
+
+            <div id="uploadVideoStatus" class="mb-3"></div>
+
+            <button type="submit" class="btn btn-primary w-100" id="uploadVideoBtn">Fazer Upload</button>
+          </form>
+        </div>
+
+        <!-- Divider -->
+        <div class="mb-3">
+          <small class="text-body-secondary d-block text-center">ou</small>
+        </div>
+
+        <!-- URL fallback -->
+        <div class="mb-0">
+          <label class="form-label">Inserir URL Direta</label>
+          <div class="input-group">
+            <input type="url" class="form-control" id="videoUrlInput" placeholder="https://exemplo.com/video.mp4">
+            <button class="btn btn-outline-secondary" type="button" id="insertUrlVideoBtn">Inserir</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{{end}}

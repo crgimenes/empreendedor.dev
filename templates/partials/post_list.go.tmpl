@@ -1,0 +1,50 @@
+{{define "post_list"}}
+{{range .Posts}}
+  {{$postAuthor := index $.UserMap .OwnerUserID}}
+  <div class="card mb-3">
+    <div class="card-body">
+      <!-- Post header with author info -->
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <div class="d-flex align-items-center gap-2">
+          <!-- Avatar -->
+          {{if $postAuthor.AvatarURL}}
+            <img src="{{$postAuthor.AvatarURL}}" alt="{{$postAuthor.Username}}" class="rounded-circle" width="32" height="32" style="object-fit: cover; width: 32px; height: 32px; aspect-ratio: 1/1;">
+          {{else}}
+            <div class="rounded-circle bg-secondary d-flex align-items-center justify-content-center" style="width: 32px; height: 32px; font-size: 0.75em;">
+              <span class="text-white fw-bold">{{first $postAuthor.Username}}</span>
+            </div>
+          {{end}}
+          <!-- Author name and timestamp -->
+          <div>
+            <div class="fw-bold" style="font-size: 0.95rem; line-height: 1.2;">{{$postAuthor.Username}}</div>
+            <small class="text-body-secondary" style="font-size: 0.8rem;">{{.CreatedAt.Format "2006-01-02 15:04"}}</small>
+          </div>
+        </div>
+        <!-- Action buttons (only visible to post author) -->
+        {{if eq $.User.ID .OwnerUserID}}
+          <div class="d-flex gap-2" role="group">
+            <button type="button" class="edit-post-btn btn btn-sm btn-outline-secondary" data-post-id="{{.ExternalID}}" data-post-content="{{.Content}}" style="width: 32px; height: 32px; min-width: 32px; min-height: 32px; padding: 0; display: flex; align-items: center; justify-content: center;" title="Editar">
+              {{template "icon-pencil" $}}
+            </button>
+            <button type="button" class="delete-post-btn btn btn-sm btn-outline-danger" data-post-id="{{.ExternalID}}" style="width: 32px; height: 32px; min-width: 32px; min-height: 32px; padding: 0; display: flex; align-items: center; justify-content: center;" title="Deletar">
+              {{template "icon-trash" $}}
+            </button>
+          </div>
+        {{end}}
+      </div>
+      <!-- Post content -->
+      <div class="card-text">
+        {{if .ContentHTML}}
+          {{.ContentHTML | safeHTML}}
+        {{else}}
+          {{.Content}}
+        {{end}}
+      </div>
+    </div>
+  </div>
+{{else}}
+  <div class="alert alert-info text-center mb-0">
+    <p class="mb-0">Nenhuma resposta neste tópico ainda.</p>
+  </div>
+{{end}}
+{{end}}

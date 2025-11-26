@@ -2,8 +2,8 @@ package permit
 
 import (
 	"database/sql"
-	"errors"
 	"edev/db"
+	"errors"
 	"strings"
 )
 
@@ -21,7 +21,7 @@ func scopeValue(s string) any {
 // without fallback logic. scopeRef == nil means "scope IS NULL".
 func checkOnce(tenantID, userID int64, resource string, scopeRef *string) (bool, error) {
 	// Query pattern:
-	// We look at edev_core_permits, joining edev_core_group_members to account for
+	// We look at permits, joining group_members to account for
 	// group-based permissions in the same tenant.
 	//
 	// Conditions:
@@ -36,8 +36,8 @@ func checkOnce(tenantID, userID int64, resource string, scopeRef *string) (bool,
 	// Using EXISTS semantics via LIMIT 1.
 
 	base := `SELECT 1
-	FROM edev_core_permits p
-	LEFT JOIN edev_core_group_members gm
+	FROM permits p
+	LEFT JOIN group_members gm
 	  ON gm.tenant_id = p.tenant_id
 	 AND gm.group_id  = p.group_id
 	 AND gm.user_id   = ?    -- 1 user_id (group membership)
@@ -117,7 +117,7 @@ func GrantUser(tenantID, userID int64, resource, scope string) error {
 	// NOTE: Cannot use ON CONFLICT due to partial UNIQUE index (WHERE user_id IS NOT NULL).
 	// Strategy: attempt INSERT; on UNIQUE failure, run UPDATE to set allowed=1.
 	const insertQ = `
-INSERT INTO edev_core_permits (
+INSERT INTO permits (
 	tenant_id,  -- 1
 	user_id,    -- 2
 	resource,   -- 3
@@ -139,7 +139,7 @@ INSERT INTO edev_core_permits (
 		// If it's a uniqueness violation, fallback to UPDATE.
 		if strings.Contains(err.Error(), "UNIQUE") || strings.Contains(err.Error(), "constraint") {
 			const updateQ = `
-UPDATE edev_core_permits
+UPDATE permits
    SET allowed = 1
  WHERE tenant_id = ?    -- 1
    AND user_id   = ?    -- 2
@@ -166,7 +166,7 @@ func RevokeUser(tenantID, userID int64, resource, scope string) error {
 	}
 
 	const q = `
-UPDATE edev_core_permits
+UPDATE permits
    SET allowed = 0
  WHERE tenant_id = ?    -- 1
    AND user_id   = ?    -- 2
@@ -191,7 +191,7 @@ func GrantGroup(tenantID, groupID int64, resource, scope string) error {
 	}
 
 	const insertQ = `
-INSERT INTO edev_core_permits (
+INSERT INTO permits (
 	tenant_id,  -- 1
 	group_id,   -- 2
 	resource,   -- 3
@@ -212,7 +212,7 @@ INSERT INTO edev_core_permits (
 	); err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") || strings.Contains(err.Error(), "constraint") {
 			const updateQ = `
-UPDATE edev_core_permits
+UPDATE permits
    SET allowed = 1
  WHERE tenant_id = ?    -- 1
    AND group_id  = ?    -- 2
@@ -238,7 +238,7 @@ func RevokeGroup(tenantID, groupID int64, resource, scope string) error {
 	}
 
 	const q = `
-UPDATE edev_core_permits
+UPDATE permits
    SET allowed = 0
  WHERE tenant_id = ?    -- 1
    AND group_id  = ?    -- 2
@@ -258,7 +258,7 @@ UPDATE edev_core_permits
 // This is useful for cleanup, but not required for normal toggling.
 func DeleteUserPermit(tenantID, userID int64, resource, scope string) error {
 	const q = `
-DELETE FROM edev_core_permits
+DELETE FROM permits
  WHERE tenant_id = ?    -- 1
    AND user_id   = ?    -- 2
    AND resource  = ?    -- 3
@@ -276,7 +276,7 @@ DELETE FROM edev_core_permits
 // DeleteGroupPermit physically deletes a group permit row.
 func DeleteGroupPermit(tenantID, groupID int64, resource, scope string) error {
 	const q = `
-DELETE FROM edev_core_permits
+DELETE FROM permits
  WHERE tenant_id = ?    -- 1
    AND group_id  = ?    -- 2
    AND resource  = ?    -- 3
@@ -312,8 +312,8 @@ SELECT DISTINCT
   COALESCE(p.scope,'') AS scope, -- 2 scope (empty string for global)
   p.allowed,                 -- 3 allowed flag (0/1)
   p.created_at               -- 4 creation timestamp
-FROM edev_core_permits p
-LEFT JOIN edev_core_group_members gm
+FROM permits p
+LEFT JOIN group_members gm
   ON gm.tenant_id = p.tenant_id
  AND gm.group_id  = p.group_id
  AND gm.user_id   = ?  -- 1 user_id for group expansion

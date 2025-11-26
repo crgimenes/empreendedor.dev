@@ -5,5 +5,12 @@
 {{ if and .Authed .User.Enabled }}
 <script defer src="/assets/events.js?v={{ .Config.GitTag }}"></script>
 {{ end }}
+
+<!-- Forum textarea clear script (no defer - must run early) -->
+<script src="/assets/forum-clear-textarea.min.js?v={{ .Config.GitTag }}"></script>
+
+<!-- Markdown mini parser -->
+<script src="/assets/md-mini.js?v={{ .Config.GitTag }}"></script>
+
 {{end}}
 

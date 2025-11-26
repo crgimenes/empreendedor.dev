@@ -32,7 +32,7 @@ func serveTCP(addr string, h http.Handler) *http.Server {
 		Addr:              addr,
 		Handler:           h,
 		ReadHeaderTimeout: 5 * time.Second,
-		IdleTimeout:       120 * time.Second, // mantém keep-alive
+		IdleTimeout:       120 * time.Second, // maintains keep-alive
 	}
 	go func() {
 		log.Printf("TCP listening on %s", addr)
@@ -49,7 +49,7 @@ func serveUDS(path string, h http.Handler) (*http.Server, net.Listener, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	// permissões do socket (só dono/leitura-escrita)
+	// socket permissions (owner read-write only)
 	_ = os.Chmod(path, 0o660)
 
 	s := &http.Server{
@@ -69,7 +69,7 @@ func serveUDS(path string, h http.Handler) (*http.Server, net.Listener, error) {
 func main() {
 	mux := apiMux()
 
-	// Externo (ex.: por trás do Caddy com TLS/H2/H3)
+	// External (e.g., behind Caddy with TLS/H2/H3)
 	_ = serveTCP(":8080", mux)
 
 	// Interno (cliente HTML/renderer no mesmo host)
