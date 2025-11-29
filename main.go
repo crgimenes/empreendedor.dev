@@ -15,6 +15,7 @@ import (
 	"edev/auth"
 	"edev/config"
 	"edev/db"
+	"edev/eav"
 	"edev/filemanager"
 	"edev/forum"
 	"edev/handlers"
@@ -402,6 +403,9 @@ func main() {
 
 	// filemanager routes (user files, images, etc.)
 	filemanager.Routes(mux)
+
+	// EAV routes
+	eav.Routes(mux)
 
 	// Forum routes - inject dependencies
 	forum.SetMdToHTML(mdToHTML)

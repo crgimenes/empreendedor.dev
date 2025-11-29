@@ -10,3 +10,220 @@
     --radius: 16px;
 }
 
+/* Responsive media elements in content areas */
+main img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 0.5rem auto;
+}
+
+main video {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 0.5rem auto;
+}
+
+main audio {
+    max-width: 100%;
+    display: block;
+    margin: 0.5rem auto;
+}
+
+/* Ensure figures and images don't overflow */
+main figure {
+    max-width: 100%;
+    overflow: hidden;
+    margin: 0.5rem auto;
+}
+
+main figure img {
+    max-width: 100%;
+    height: auto;
+    margin: 0 auto;
+}
+
+/* Card text media responsiveness (for forum posts) */
+.card-text img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 0.5rem auto;
+}
+
+.card-text video {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 0.5rem auto;
+}
+
+.card-text audio {
+    max-width: 100%;
+    display: block;
+    margin: 0.5rem auto;
+}
+
+/* Prevent overflow of content within cards */
+.card-text {
+    overflow-x: auto;
+}
+
+.card-text>* {
+    max-width: 100%;
+}
+
+/* Media responsiveness in modals (edit/insert dialogs) */
+.modal-body img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 0.5rem auto;
+}
+
+.modal-body video {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 0.5rem auto;
+}
+
+.modal-body audio {
+    max-width: 100%;
+    display: block;
+    margin: 0.5rem auto;
+}
+
+/* Media responsiveness in preview areas and textareas */
+textarea {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+}
+
+/* Generic responsive media for all containers */
+img {
+    max-width: 100%;
+    height: auto;
+    margin: 0.5rem auto;
+}
+
+video {
+    max-width: 100%;
+    height: auto;
+    margin: 0.5rem auto;
+}
+
+audio {
+    max-width: 100%;
+    margin: 0.5rem auto;
+}
+
+/* Media responsiveness in markdown preview boxes */
+.md-mini-preview img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 0.5rem auto;
+}
+
+.md-mini-preview video {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 0.5rem auto;
+}
+
+.md-mini-preview audio {
+    max-width: 100%;
+    display: block;
+    margin: 0.5rem auto;
+}
+
+/* Responsive and styled tables */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0;
+    background-color: var(--card);
+    border-radius: 0.5rem;
+    overflow: hidden;
+}
+
+/* Table header styling */
+table thead {
+    background-color: #3a3a3a;
+    color: #e0e0e0;
+}
+
+table thead th {
+    padding: 0.75rem;
+    text-align: center;
+    font-weight: 600;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Table body styling */
+table tbody tr {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Alternating row colors */
+table tbody tr:nth-child(odd) {
+    background-color: var(--card);
+}
+
+table tbody tr:nth-child(even) {
+    background-color: rgba(255, 255, 255, 0.02);
+}
+
+/* Hover effect on rows */
+table tbody tr:hover {
+    background-color: #2a2a2a;
+    transition: background-color 0.2s ease;
+}
+
+/* Table cell styling */
+table td {
+    padding: 0.75rem;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    color: var(--text);
+}
+
+/* Center align specific columns if needed */
+table th[data-align="center"],
+table td[data-align="center"] {
+    text-align: center;
+}
+
+table th[data-align="right"],
+table td[data-align="right"] {
+    text-align: right;
+}
+
+/* Responsive tables on small screens */
+@media (max-width: 768px) {
+    table {
+        font-size: 0.9rem;
+    }
+
+    table th,
+    table td {
+        padding: 0.5rem;
+    }
+
+    table thead {
+        font-size: 0.85rem;
+    }
+}
+
+/* Tables in cards or modals */
+.card table,
+.modal-body table {
+    margin: 1rem 0;
+}
+
+.card-text table {
+    margin: 0.5rem 0;
+}

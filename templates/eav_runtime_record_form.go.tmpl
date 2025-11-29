@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="pt-BR" data-bs-theme="dark">
+  <head>
+    {{template "head" .}}
+  </head>
+  <body>
+    {{template "navbar" .}}
+
+    <main class="container py-5">
+      <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+          <li class="breadcrumb-item"><a href="/eav">Espaços de trabalho</a></li>
+          <li class="breadcrumb-item"><a href="/eav/forms?workspace_id={{.Workspace.ID}}">Formulários</a></li>
+          <li class="breadcrumb-item"><a href="/eav/workspaces/{{.Workspace.ReferenceID}}/forms/{{.Form.Slug}}/records">Registros</a></li>
+          <li class="breadcrumb-item active" aria-current="page">
+            {{if eq .Mode "edit"}}Editar{{else}}Novo{{end}} Registro
+          </li>
+        </ol>
+      </nav>
+
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <div>
+            <h1 class="h5 mb-0">{{if eq .Mode "edit"}}Editar{{else}}Novo{{end}} Registro</h1>
+            <p class="text-muted mb-0">{{.Form.Label}}</p>
+          </div>
+          <a href="{{.BackURL}}" class="btn btn-outline-secondary">Voltar</a>
+        </div>
+        <div class="card-body">
+          {{if .Errors}}
+          <div class="alert alert-danger" role="alert">
+            {{range .Errors}}
+              <div>{{.}}</div>
+            {{end}}
+          </div>
+          {{end}}
+
+          <form method="POST" action="{{.ActionURL}}">
+            <input type="hidden" name="csrf_token" value="{{.Csrf}}">
+            {{if and .Record (eq .Mode "edit")}}
+            <input type="hidden" name="record_rev" value="{{.Record.Rev}}">
+            {{end}}
+
+            {{range .Fields}}
+              {{if .IsUIOnly}}
+                <div class="mb-4 p-3 bg-body-tertiary rounded border-start border-4 border-info">
+                  <h5 class="mb-1 fw-semibold text-info">{{.Field.Label}}</h5>
+                  <p class="mb-0 text-info-emphasis">Os campos abaixo são condicionais e só aparecem quando as regras configuradas para este agrupamento são atendidas.</p>
+                </div>
+              {{else}}
+                <div class="mb-3">
+                  <label for="{{.InputName}}" class="form-label">{{.Field.Label}}
+                    {{if .Field.Required}}
+                      <span class="text-danger">*</span>
+                    {{end}}
+                    {{if .ReadOnly}}
+                      <span class="badge text-bg-secondary ms-2">Somente leitura</span>
+                    {{end}}
+                  </label>
+
+                  {{if eq .Field.PrimitiveKind "TEXT"}}
+                    <input type="text" class="form-control{{if .ReadOnly}} form-control-plaintext{{end}}" id="{{.InputName}}" name="{{.InputName}}" value="{{.Value}}" {{if .ReadOnly}}readonly{{end}}>
+                  {{else if eq .Field.PrimitiveKind "INT"}}
+                    <input type="number" step="1" class="form-control{{if .ReadOnly}} form-control-plaintext{{end}}" id="{{.InputName}}" name="{{.InputName}}" value="{{.Value}}" {{if .ReadOnly}}readonly{{end}}>
+                  {{else if eq .Field.PrimitiveKind "FLOAT"}}
+                    <input type="number" step="any" class="form-control{{if .ReadOnly}} form-control-plaintext{{end}}" id="{{.InputName}}" name="{{.InputName}}" value="{{.Value}}" {{if .ReadOnly}}readonly{{end}}>
+                  {{else if eq .Field.PrimitiveKind "DATETIME"}}
+                    <input type="datetime-local" class="form-control{{if .ReadOnly}} form-control-plaintext{{end}}" id="{{.InputName}}" name="{{.InputName}}" value="{{.Value}}" {{if .ReadOnly}}readonly{{end}}>
+                  {{else if eq .Field.PrimitiveKind "BOOL"}}
+                    <div class="form-check">
+                      <input class="form-check-input" type="checkbox" id="{{.InputName}}" name="{{.InputName}}" {{if .BoolValue}}checked{{end}} {{if .ReadOnly}}disabled{{end}}>
+                      <label class="form-check-label" for="{{.InputName}}">Sim</label>
+                    </div>
+                  {{else}}
+                    <input type="text" class="form-control" id="{{.InputName}}" name="{{.InputName}}" value="{{.Value}}" placeholder="Tipo não suportado">
+                  {{end}}
+
+                  <div class="form-text"><code>{{.Field.MachineName}}</code> ({{.Field.PrimitiveKind}})</div>
+                  {{if .Error}}
+                    <div class="text-danger small">{{.Error}}</div>
+                  {{end}}
+                </div>
+              {{end}}
+            {{end}}
+
+            <div class="d-flex gap-2">
+              <button type="submit" class="btn btn-primary">Salvar</button>
+              <a href="{{.BackURL}}" class="btn btn-outline-secondary">Cancelar</a>
+            </div>
+          </form>
+
+          {{if and (eq .Mode "edit") .DeleteURL}}
+          <div class="alert alert-danger-subtle border border-danger-subtle rounded mt-4">
+            <div class="d-flex flex-column gap-3">
+              <div>
+                <h2 class="h6 mb-1 text-danger">Excluir registro</h2>
+              </div>
+              <form method="POST" action="{{.DeleteURL}}" class="d-flex flex-column flex-lg-row gap-3 align-items-lg-center">
+                <input type="hidden" name="csrf_token" value="{{.Csrf}}">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" value="on" id="confirm_delete_record" name="confirm_delete" required>
+                  <label class="form-check-label" for="confirm_delete_record">Confirmar exclusão.</label>
+                </div>
+                <button type="submit" class="btn btn-outline-danger ms-lg-auto">Excluir</button>
+              </form>
+            </div>
+          </div>
+          {{end}}
+        </div>
+      </div>
+    </main>
+
+    <footer>
+      {{template "footer" .}}
+    </footer>
+    {{template "scripts" .}}
+  </body>
+</html>

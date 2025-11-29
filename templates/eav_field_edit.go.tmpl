@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="pt-BR" data-bs-theme="dark">
+  <head>
+    {{template "head" .}}
+  </head>
+
+  <body>
+    {{template "navbar" .}}
+
+    <main class="container py-5">
+      <nav aria-label="breadcrumb">
+          <ol class="breadcrumb">
+              <li class="breadcrumb-item"><a href="/eav">Workspaces</a></li>
+              <li class="breadcrumb-item"><a href="/eav/forms?workspace_id={{.Form.WorkspaceID}}">Formulários</a></li>
+              <li class="breadcrumb-item"><a href="/eav/forms/edit?id={{.Form.ID}}">Editar formulário</a></li>
+              <li class="breadcrumb-item active" aria-current="page">Editar campo</li>
+          </ol>
+      </nav>
+
+      <div class="card">
+          <div class="card-header d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2">
+              <div>
+                  <h2 class="h5 mb-1">Editar campo</h2>
+                  <p class="text-muted mb-0">Formulário: {{.Form.Label}}</p>
+              </div>
+              <a href="/eav/forms/edit?id={{.Form.ID}}" class="btn btn-outline-secondary btn-sm">Voltar para formulário</a>
+          </div>
+          <div class="card-body">
+              <form method="POST" action="/eav/fields/edit?id={{.Field.ID}}">
+                  <input type="hidden" name="csrf_token" value="{{.Csrf}}">
+                  
+                  <div class="mb-3">
+                      <label for="label" class="form-label">Label</label>
+                      <input type="text" class="form-control" id="label" name="label" value="{{.Field.Label}}" required>
+                  </div>
+
+                  <div class="mb-3">
+                      <label class="form-label">Machine Name</label>
+                      <input type="text" class="form-control" value="{{.Field.MachineName}}" disabled readonly>
+                  </div>
+
+                  <div class="mb-3">
+                      <label class="form-label">Tipo de Dado</label>
+                      <input type="text" class="form-control" value="{{.Field.PrimitiveKind}}" disabled readonly>
+                  </div>
+
+                  <div class="row">
+                      <div class="col-md-6 mb-3">
+                          <label for="ui_kind" class="form-label">Tipo de UI</label>
+                          <select class="form-select" id="ui_kind" name="ui_kind" required>
+                              {{range .UIKinds}}
+                              <option value="{{.Value}}" {{if eq $.SelectedUIKind .Value}}selected{{end}}>{{.Label}}</option>
+                              {{end}}
+                          </select>
+                      </div>
+                      <div class="col-md-6 mb-3">
+                          <label for="z_order" class="form-label">Ordem</label>
+                          <input type="number" class="form-control" id="z_order" name="z_order" value="{{.Field.ZOrder}}">
+                      </div>
+                  </div>
+
+                  <div class="mb-3 form-check">
+                      <input type="checkbox" class="form-check-input" id="required" name="required" {{if .Field.Required}}checked{{end}}>
+                      <label class="form-check-label" for="required">Campo obrigatório</label>
+                  </div>
+
+                  <div class="mb-3 form-check">
+                      <input type="checkbox" class="form-check-input" id="is_readonly" name="is_readonly" {{if .Field.IsReadonly}}checked{{end}}>
+                      <label class="form-check-label" for="is_readonly">Somente leitura no runtime</label>
+                      <div class="form-text">Exibe o valor nas telas de uso, mas impede alterações.</div>
+                  </div>
+
+                  <div class="mb-3">
+                      <label for="ui_meta_json" class="form-label">Meta JSON (Configuração UI)</label>
+                      <textarea class="form-control" id="ui_meta_json" name="ui_meta_json" rows="3">{{.Field.UIMetaJSON}}</textarea>
+                  </div>
+
+                  <div class="mb-3">
+                      <label for="expression" class="form-label">Expressão processada (opcional)</label>
+                      <textarea class="form-control" id="expression" name="expression" rows="3" placeholder="Ex: total = campo_a + campo_b">{{.Field.Expression}}</textarea>
+                      <div class="form-text">Ainda não executamos nenhuma expressão; apenas armazenamos o texto.</div>
+                  </div>
+
+                  <div class="mb-3">
+                      <label for="expression_order" class="form-label">Ordem de processamento</label>
+                      <input type="number" class="form-control" id="expression_order" name="expression_order" value="{{.Field.ExpressionOrder}}" min="0">
+                      <div class="form-text">Quando o processamento estiver ativo, campos com números menores serão calculados primeiro.</div>
+                  </div>
+
+                  <button type="submit" class="btn btn-primary">Salvar alterações</button>
+                  <a href="/eav/forms/edit?id={{.Form.ID}}" class="btn btn-outline-secondary">Cancelar</a>
+              </form>
+
+              <div class="alert alert-danger-subtle border border-danger-subtle rounded mt-4">
+                  <div class="d-flex flex-column gap-3">
+                      <div>
+                          <h3 class="h6 mb-1 text-danger">Excluir campo</h3>
+                          <p class="mb-0 text-muted">Esta ação remove o campo das telas, mas mantém o histórico no banco.</p>
+                      </div>
+                      <form method="POST" action="/eav/fields/delete" class="d-flex flex-column flex-lg-row gap-3 align-items-lg-center">
+                          <input type="hidden" name="csrf_token" value="{{.Csrf}}">
+                          <input type="hidden" name="field_id" value="{{.Field.ID}}">
+                          <div class="form-check">
+                              <input class="form-check-input" type="checkbox" value="on" id="confirm_delete_field" name="confirm_delete" required>
+                              <label class="form-check-label" for="confirm_delete_field">Confirmo que desejo excluir este campo.</label>
+                          </div>
+                          <button type="submit" class="btn btn-danger ms-lg-auto">Excluir campo</button>
+                      </form>
+                  </div>
+              </div>
+          </div>
+      </div>
+    </main>
+    
+    <footer>
+      {{template "footer" .}}
+    </footer>
+    {{template "scripts" .}}
+  </body>
+</html>

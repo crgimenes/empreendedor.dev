@@ -62,8 +62,7 @@ CREATE TABLE IF NOT EXISTS eav_fields (
     machine_name     TEXT NOT NULL,           -- internal stable key (no spaces), unique per form
     label            TEXT NOT NULL,           -- user-facing label
 
-    z_order          INTEGER NOT NULL DEFAULT 0,  -- primary render order
-    position         INTEGER NOT NULL DEFAULT 0,  -- secondary/legacy ordering (optional)
+    z_order          INTEGER NOT NULL DEFAULT 0,  -- primary render order (ties break by label)
     visible          INTEGER NOT NULL DEFAULT 1 CHECK (visible IN (0,1)),
 
     -- UI-only elements (no data persisted in values)

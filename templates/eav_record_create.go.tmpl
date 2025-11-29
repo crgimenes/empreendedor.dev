@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="pt-BR" data-bs-theme="dark">
+  <head>
+    {{template "head" .}}
+  </head>
+
+  <body>
+    {{template "navbar" .}}
+
+    <main class="container py-5">
+      <nav aria-label="breadcrumb">
+          <ol class="breadcrumb">
+              <li class="breadcrumb-item"><a href="/eav">Workspaces</a></li>
+              <li class="breadcrumb-item"><a href="/eav/forms?workspace_id={{.Form.WorkspaceID}}">Formulários</a></li>
+              <li class="breadcrumb-item"><a href="/eav/records?form_id={{.Form.ID}}">Registros</a></li>
+              <li class="breadcrumb-item active" aria-current="page">Novo Registro</li>
+          </ol>
+      </nav>
+
+      <div class="card">
+          <div class="card-header">
+              <h2 class="h5 mb-0">Novo Registro: {{.Form.Label}}</h2>
+          </div>
+          <div class="card-body">
+              <form method="POST" action="/eav/records/create?form_id={{.Form.ID}}">
+                  <input type="hidden" name="csrf_token" value="{{.Csrf}}">
+                  
+                  {{range .Fields}}
+                      {{if not .IsUI}}
+                      <div class="mb-3">
+                          <label for="field_{{.ID}}" class="form-label">{{.Label}}</label>
+                          
+                          {{if eq .PrimitiveKind "TEXT"}}
+                              <input type="text" class="form-control" id="field_{{.ID}}" name="field_{{.ID}}">
+                          {{else if eq .PrimitiveKind "INT"}}
+                              <input type="number" class="form-control" id="field_{{.ID}}" name="field_{{.ID}}" step="1">
+                          {{else if eq .PrimitiveKind "FLOAT"}}
+                              <input type="number" class="form-control" id="field_{{.ID}}" name="field_{{.ID}}" step="any">
+                          {{else if eq .PrimitiveKind "BOOL"}}
+                              <div class="form-check">
+                                  <input class="form-check-input" type="checkbox" id="field_{{.ID}}" name="field_{{.ID}}">
+                                  <label class="form-check-label" for="field_{{.ID}}">Sim</label>
+                              </div>
+                          {{else if eq .PrimitiveKind "DATETIME"}}
+                              <input type="datetime-local" class="form-control" id="field_{{.ID}}" name="field_{{.ID}}">
+                          {{else}}
+                              <input type="text" class="form-control" id="field_{{.ID}}" name="field_{{.ID}}" placeholder="Tipo desconhecido">
+                          {{end}}
+                          
+                          <div class="form-text">{{.MachineName}} ({{.PrimitiveKind}})</div>
+                      </div>
+                      {{else}}
+                          <!-- UI Only Field (Header, Separator, etc) -->
+                          <div class="mb-3">
+                              <h5 class="border-bottom pb-2">{{.Label}}</h5>
+                          </div>
+                      {{end}}
+                  {{end}}
+
+                  <button type="submit" class="btn btn-primary">Salvar Registro</button>
+                  <a href="/eav/records?form_id={{.Form.ID}}" class="btn btn-outline-secondary">Cancelar</a>
+              </form>
+          </div>
+      </div>
+    </main>
+    
+    <footer>
+      {{template "footer" .}}
+    </footer>
+    {{template "scripts" .}}
+  </body>
+</html>

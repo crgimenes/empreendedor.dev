@@ -1,0 +1,2 @@
+-- Reverse migration: no action needed
+-- reference_id values should remain populated

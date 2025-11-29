@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="pt-BR" data-bs-theme="dark">
+  <head>
+    {{template "head" .}}
+  </head>
+
+  <body>
+    {{template "navbar" .}}
+
+    <main class="container py-5">
+      <nav aria-label="breadcrumb">
+          <ol class="breadcrumb">
+              <li class="breadcrumb-item"><a href="/eav">Workspaces</a></li>
+              <li class="breadcrumb-item"><a href="/eav/forms?workspace_id={{.Form.WorkspaceID}}">Formulários</a></li>
+              <li class="breadcrumb-item"><a href="/eav/forms/edit?id={{.Form.ID}}">Editar formulário</a></li>
+              <li class="breadcrumb-item active" aria-current="page">Novo campo</li>
+          </ol>
+      </nav>
+
+      <div class="card">
+          <div class="card-header">
+              <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2">
+                  <div>
+                      <h2 class="h5 mb-1">Criar novo campo</h2>
+                      <p class="text-muted mb-0">Formulário: {{.Form.Label}}</p>
+                  </div>
+                  <a href="/eav/forms/edit?id={{.Form.ID}}" class="btn btn-outline-secondary btn-sm">Voltar para formulário</a>
+              </div>
+          </div>
+          <div class="card-body">
+              <form method="POST" action="/eav/fields/create?form_id={{.FormID}}">
+                  <input type="hidden" name="csrf_token" value="{{.Csrf}}">
+                  
+                  <div class="row">
+                      <div class="col-md-6 mb-3">
+                          <label for="label" class="form-label">Label</label>
+                          <input type="text" class="form-control" id="label" name="label" required>
+                      </div>
+                      <div class="col-md-6 mb-3">
+                          <label for="machine_name" class="form-label">Machine Name</label>
+                          <input type="text" class="form-control" id="machine_name" name="machine_name" required pattern="[a-z0-9_]+" title="letras minúsculas, números e underline">
+                      </div>
+                  </div>
+
+                  <div class="row">
+                      <div class="col-md-4 mb-3">
+                          <label for="primitive_kind" class="form-label">Tipo de Dado</label>
+                          <select class="form-select" id="primitive_kind" name="primitive_kind" required>
+                              <option value="TEXT">Texto</option>
+                              <option value="INT">Inteiro</option>
+                              <option value="FLOAT">Decimal</option>
+                              <option value="BOOL">Booleano</option>
+                              <option value="DATETIME">Data/Hora</option>
+                          </select>
+                      </div>
+                      <div class="col-md-4 mb-3">
+                          <label for="ui_kind" class="form-label">Tipo de UI</label>
+                          <select class="form-select" id="ui_kind" name="ui_kind" required>
+                              {{range .UIKinds}}
+                              <option value="{{.Value}}" {{if eq $.SelectedUIKind .Value}}selected{{end}}>{{.Label}}</option>
+                              {{end}}
+                          </select>
+                      </div>
+                      <div class="col-md-4 mb-3">
+                          <label for="z_order" class="form-label">Ordem</label>
+                          <input type="number" class="form-control" id="z_order" name="z_order" value="0">
+                      </div>
+                  </div>
+
+                  <div class="mb-3 form-check">
+                      <input type="checkbox" class="form-check-input" id="is_ui" name="is_ui">
+                      <label class="form-check-label" for="is_ui">Apenas UI (sem persistência)</label>
+                  </div>
+
+                  <div class="mb-3 form-check">
+                      <input type="checkbox" class="form-check-input" id="required" name="required">
+                      <label class="form-check-label" for="required">Campo obrigatório</label>
+                  </div>
+
+                  <div class="mb-3 form-check">
+                      <input type="checkbox" class="form-check-input" id="is_readonly" name="is_readonly">
+                      <label class="form-check-label" for="is_readonly">Somente leitura no runtime</label>
+                      <div class="form-text">Exibe o valor nas telas de uso, porém bloqueia edição.</div>
+                  </div>
+
+                  <div class="mb-3">
+                      <label for="ui_meta_json" class="form-label">Meta JSON (Configuração UI)</label>
+                      <textarea class="form-control" id="ui_meta_json" name="ui_meta_json" rows="3">{}</textarea>
+                  </div>
+
+                  <div class="mb-3">
+                      <label for="expression" class="form-label">Expressão processada (opcional)</label>
+                      <textarea class="form-control" id="expression" name="expression" rows="3" placeholder="Ex: total = campo_a + campo_b"></textarea>
+                      <div class="form-text">Guardamos apenas o texto da expressão; o cálculo será implementado depois.</div>
+                  </div>
+
+                  <div class="mb-3">
+                      <label for="expression_order" class="form-label">Ordem de processamento</label>
+                      <input type="number" class="form-control" id="expression_order" name="expression_order" value="0" min="0">
+                      <div class="form-text">Usaremos este valor quando as expressões forem processadas. Campos com número menor serão avaliados primeiro.</div>
+                  </div>
+
+                  <button type="submit" class="btn btn-primary">Criar campo</button>
+                  <a href="/eav/forms/edit?id={{.Form.ID}}" class="btn btn-outline-secondary">Cancelar</a>
+              </form>
+          </div>
+      </div>
+    </main>
+    
+    <footer>
+      {{template "footer" .}}
+    </footer>
+    {{template "scripts" .}}
+  </body>
+</html>

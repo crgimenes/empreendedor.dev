@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="pt-BR" data-bs-theme="dark">
+  <head>
+    {{template "head" .}}
+  </head>
+
+  <body>
+    {{template "navbar" .}}
+
+    <main class="container py-5">
+      <nav aria-label="breadcrumb">
+          <ol class="breadcrumb">
+              <li class="breadcrumb-item"><a href="/eav">Workspaces</a></li>
+              <li class="breadcrumb-item active" aria-current="page">Novo Workspace</li>
+          </ol>
+      </nav>
+
+      <div class="card">
+          <div class="card-header">
+              <h2 class="h5 mb-0">Criar Novo Workspace</h2>
+          </div>
+          <div class="card-body">
+              <form method="POST" action="/eav/workspaces/create">
+                  <input type="hidden" name="csrf_token" value="{{.Csrf}}">
+                  
+                  <div class="mb-3">
+                      <label for="name" class="form-label">Nome</label>
+                      <input type="text" class="form-control" id="name" name="name" required>
+                  </div>
+
+                  <div class="mb-3">
+                      <label for="description" class="form-label">Descrição</label>
+                      <textarea class="form-control" id="description" name="description" rows="3"></textarea>
+                  </div>
+
+                  <button type="submit" class="btn btn-primary">Criar Workspace</button>
+                  <a href="/eav" class="btn btn-outline-secondary">Cancelar</a>
+              </form>
+          </div>
+      </div>
+    </main>
+    
+    <footer>
+      {{template "footer" .}}
+    </footer>
+    {{template "scripts" .}}
+  </body>
+</html>
