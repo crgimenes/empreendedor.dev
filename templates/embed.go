@@ -4,16 +4,11 @@ package templates
 
 import (
 	"embed"
-	"io"
+	"io/fs"
 )
 
-var (
-	//go:embed *.go.tmpl partials/*.go.tmpl
-	filesystem embed.FS
+//go:embed *.go.tmpl partials/*.go.tmpl
+var FS embed.FS
 
-	tpl = loadTemplates()
-)
-
-func ExecuteTemplate(w io.Writer, templateName string, data any) error {
-	return tpl.ExecuteTemplate(w, templateName, data)
-}
+// EmbeddedFS exports FS as an io/fs.FS for use with template system
+var EmbeddedFS fs.FS = FS

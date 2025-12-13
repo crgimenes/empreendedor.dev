@@ -1,0 +1,20 @@
+;; Sample Filo Configuration File
+;; This demonstrates environment variable fallbacks and conditional logic
+
+;; Server Configuration
+(let ()
+  (set Address ":3210")
+  
+  ;; Conditional BaseURL based on environment
+  ;; getEnv is a custom builtin registered in main.go
+  (set BaseURL (getEnv "EDEV_BASE_URL" "http://localhost:3210"))
+  
+  ;; GitHub OAuth Configuration  
+  (set GithubOAuthEnabled #t)
+  (set GitHubClientID (getEnv "GITHUB_CLIENT_ID" ""))
+  (set GitHubClientSecret (getEnv "GITHUB_CLIENT_SECRET" ""))
+  
+  ;; X (Twitter) OAuth Configuration
+  (set XOAuthEnabled #f)
+  (set XClientID (getEnv "X_CLIENT_ID" ""))
+  (set XClientSecret (getEnv "X_CLIENT_SECRET" "")))

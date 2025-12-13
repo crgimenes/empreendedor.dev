@@ -1,2 +1,0 @@
-ALTER TABLE eav_fields
-    ADD COLUMN position INTEGER NOT NULL DEFAULT 0;

@@ -3,18 +3,9 @@
 package templates
 
 import (
-	"html/template"
-	"io"
+	"io/fs"
 	"os"
 )
 
-var (
-	filesystem = os.DirFS("./templates")
-
-	tpl *template.Template
-)
-
-func ExecuteTemplate(w io.Writer, templateName string, data any) error {
-	tpl = loadTemplates()
-	return tpl.ExecuteTemplate(w, templateName, data)
-}
+// EmbeddedFS provides access to templates via DirFS in dev mode
+var EmbeddedFS fs.FS = os.DirFS("./templates")

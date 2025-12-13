@@ -8,7 +8,9 @@ import (
 	"net/http"
 )
 
-//go:embed *.png *.svg *.ico *.css *.min.js bootstrap/css/*.min.css bootstrap/js/*.min.js bootstrap/js/*.min.js.map bootstrap/css/*.min.css.map events.js md-mini.js
+// Arquivos específicos da aplicação (favicons, manifests)
+//
+//go:embed *.png *.svg *.ico
 var assets embed.FS
 
 var FS = http.FS(assets)
@@ -16,9 +18,6 @@ var FS = http.FS(assets)
 func init() {
 	// Ensure correct MIME types for certain assets.
 	_ = mime.AddExtensionType(".svg", "image/svg+xml")
-	//_ = mime.AddExtensionType(".webmanifest", "application/manifest+json")
-	_ = mime.AddExtensionType(".css", "text/css")
-	_ = mime.AddExtensionType(".js", "application/javascript")
-	_ = mime.AddExtensionType(".map", "application/json")
-
+	_ = mime.AddExtensionType(".png", "image/png")
+	_ = mime.AddExtensionType(".ico", "image/x-icon")
 }

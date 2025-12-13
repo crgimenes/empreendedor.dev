@@ -1,0 +1,2 @@
+-- Migration: 1000_dummy_migration
+-- Just a dummy migration to prevent embed errors when no real migrations exist, this file can be safely replaced with real migrations.

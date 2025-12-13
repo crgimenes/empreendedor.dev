@@ -1,1 +1,0 @@
--- Reverse not supported: dropping columns requires table rebuild.

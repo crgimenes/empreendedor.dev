@@ -24,9 +24,8 @@ clean:
 	rm -f $(BINARY_NAME) $(BINARY_NAME)-*
 
 clean-all: clean
-	rm -rf edev.db-shm edev.db-wal edev.db sessions.gob data
-	rm -f *.log
-	rm -rf dist
+	rm -f *.db-shm *.db-wal *.db sessions.gob *.log filo-cli
+	rm -rf dist data
 
 
 

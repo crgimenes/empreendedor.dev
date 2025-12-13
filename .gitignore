@@ -27,6 +27,8 @@ go.work.sum
 # env file
 .env
 init.lua
+init.filo
+
 
 # Editor/IDE
 nonfree

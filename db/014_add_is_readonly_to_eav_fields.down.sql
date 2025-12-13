@@ -1,2 +1,0 @@
--- Reverse not supported: drop column would require table rebuild.
--- Leave is_readonly column in place when rolling back.
