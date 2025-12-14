@@ -73,18 +73,6 @@ func runFiloFile(name string) {
 	F.SetGlobal("GitHubClientID", os.Getenv("EDEV_GITHUB_CLIENT_ID"))
 	F.SetGlobal("GitHubClientSecret", os.Getenv("EDEV_GITHUB_CLIENT_SECRET"))
 
-	F.SetGlobal("XOAuthEnabled", os.Getenv("EDEV_X_OAUTH_ENABLED") == "true")
-	F.SetGlobal("XClientID", os.Getenv("EDEV_X_CLIENT_ID"))
-	F.SetGlobal("XClientSecret", os.Getenv("EDEV_X_CLIENT_SECRET"))
-
-	F.SetGlobal("FakeOAuthEnabled", os.Getenv("EDEV_FAKE_OAUTH_ENABLED") == "true")
-	F.SetGlobal("FakeOAuthBaseURL", ifEmpty(
-		os.Getenv("EDEV_FAKE_OAUTH_BASE_URL"), config.Cfg.FakeOAuthBaseURL))
-	F.SetGlobal("FakeOAuthClientID", ifEmpty(
-		os.Getenv("EDEV_FAKE_OAUTH_CLIENT_ID"), config.Cfg.FakeOAuthClientID))
-	F.SetGlobal("FakeOAuthRedirectPath", ifEmpty(
-		os.Getenv("EDEV_FAKE_OAUTH_REDIRECT_PATH"), config.Cfg.FakeOAuthRedirect))
-
 	F.SetGlobal("DBFile", ifEmpty(
 		os.Getenv("EDEV_DB_FILE"), config.Cfg.DBFile))
 
@@ -150,7 +138,6 @@ func runFiloFile(name string) {
 
 	config.Cfg.Addrs = F.MustGetString("Address")
 	config.Cfg.BaseURL = F.MustGetString("BaseURL")
-	config.Cfg.FakeOAuthEnabled = F.MustGetBool("FakeOAuthEnabled")
 
 	config.Cfg.DiscordOAuthEnabled = F.MustGetBool("DiscordOAuthEnabled")
 	config.Cfg.DiscordClientID = F.MustGetString("DiscordClientID")
@@ -161,19 +148,7 @@ func runFiloFile(name string) {
 	config.Cfg.GitHubClientSecret = F.MustGetString("GitHubClientSecret")
 	config.Cfg.GitTag = F.MustGetString("GitTag")
 
-	config.Cfg.XOAuthEnabled = F.MustGetBool("XOAuthEnabled")
-	config.Cfg.XClientID = F.MustGetString("XClientID")
-	config.Cfg.XClientSecret = F.MustGetString("XClientSecret")
 	config.Cfg.DBFile = F.MustGetString("DBFile")
-
-	if config.Cfg.FakeOAuthEnabled {
-
-		session.EnableInsecureCookie()
-
-		config.Cfg.FakeOAuthBaseURL = F.MustGetString("FakeOAuthBaseURL")
-		config.Cfg.FakeOAuthClientID = F.MustGetString("FakeOAuthClientID")
-		config.Cfg.FakeOAuthRedirect = F.MustGetString("FakeOAuthRedirectPath")
-	}
 
 	config.Cfg.ResendAPIKey = F.MustGetString("ResendAPIKey")
 	config.Cfg.EmailDomain = F.MustGetString("EmailDomain")

@@ -14,7 +14,3 @@
   (set GitHubClientID (getEnv "GITHUB_CLIENT_ID" ""))
   (set GitHubClientSecret (getEnv "GITHUB_CLIENT_SECRET" ""))
   
-  ;; X (Twitter) OAuth Configuration
-  (set XOAuthEnabled #f)
-  (set XClientID (getEnv "X_CLIENT_ID" ""))
-  (set XClientSecret (getEnv "X_CLIENT_SECRET" "")))
