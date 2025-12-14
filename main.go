@@ -16,10 +16,8 @@ import (
 	"github.com/crgimenes/devengine/auth"
 	"github.com/crgimenes/devengine/config"
 	"github.com/crgimenes/devengine/db"
-	"github.com/crgimenes/devengine/eav"
 	"github.com/crgimenes/devengine/filemanager"
 	"github.com/crgimenes/devengine/filo"
-	"github.com/crgimenes/devengine/forum"
 	"github.com/crgimenes/devengine/handlers"
 	"github.com/crgimenes/devengine/log"
 	"github.com/crgimenes/devengine/middleware"
@@ -263,9 +261,6 @@ func main() {
 	session.Routes(mux)
 	h.Routes(mux)
 	filemanager.Routes(mux)
-	eav.Routes(mux)
-	forum.SetMdToHTML(api.MdToHTML)
-	forum.Routes(mux)
 	api.Routes(mux)
 
 	// Rotas específicas da aplicação
