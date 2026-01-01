@@ -89,7 +89,7 @@ func runFiloFile(name string) {
 
 	// Register custom builtin: getEnv
 	// Usage in Filo: (getEnv "ENV_VAR_NAME" "default_value")
-	F.RegisterBuiltin("getEnv", func(ctx context.Context, args []filo.Value) (filo.Value, error) {
+	if err := F.RegisterBuiltin("getEnv", func(ctx context.Context, args []filo.Value) (filo.Value, error) {
 		if len(args) != 2 {
 			return filo.Value{}, fmt.Errorf("getEnv expects 2 arguments: env var name and default value")
 		}
@@ -109,10 +109,12 @@ func runFiloFile(name string) {
 			return filo.VString(defaultValue), nil
 		}
 		return filo.VString(value), nil
-	})
+	}); err != nil {
+		log.Fatal(err)
+	}
 
 	// Register print builtin for debugging
-	F.RegisterBuiltin("print", func(ctx context.Context, args []filo.Value) (filo.Value, error) {
+	if err := F.RegisterBuiltin("print", func(ctx context.Context, args []filo.Value) (filo.Value, error) {
 		strs := make([]string, len(args))
 		for i, arg := range args {
 			s, err := arg.AsString()
@@ -123,7 +125,9 @@ func runFiloFile(name string) {
 		}
 		log.Println(strings.Join(strs, " "))
 		return filo.Value{}, nil
-	})
+	}); err != nil {
+		log.Fatal(err)
+	}
 
 	// Read the Filo file.
 	b, err := os.ReadFile(filepath.Clean(name))
