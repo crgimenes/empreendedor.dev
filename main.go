@@ -17,7 +17,7 @@ import (
 	"github.com/crgimenes/devengine/config"
 	"github.com/crgimenes/devengine/db"
 	"github.com/crgimenes/devengine/filemanager"
-	"github.com/crgimenes/devengine/filo"
+	"github.com/crgimenes/filo"
 	"github.com/crgimenes/devengine/handlers"
 	"github.com/crgimenes/devengine/log"
 	"github.com/crgimenes/devengine/middleware"
