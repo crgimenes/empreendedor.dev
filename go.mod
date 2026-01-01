@@ -2,7 +2,10 @@ module github.com/crgimenes/empreendedor.dev
 
 go 1.25
 
-require github.com/crgimenes/devengine v0.0.0-20260101021957-a685bee059d3
+require (
+	github.com/crgimenes/devengine v0.0.0-20260101021957-a685bee059d3
+	github.com/crgimenes/filo v0.0.1
+)
 
 require (
 	github.com/aymerick/douceur v0.2.0 // indirect
