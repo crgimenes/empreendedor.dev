@@ -6,12 +6,16 @@ github.com/crgimenes/devengine v0.0.1 h1:GJ46dutMghUZSIfzTB9zidhtO2hD4tg6APgjFzH
 github.com/crgimenes/devengine v0.0.1/go.mod h1:7aSHd8c5gijD8EeOR/sjvUx2Wj9p54LNa/nUJbEHL/U=
 github.com/crgimenes/devengine v0.0.2 h1:KfcnxlRT2b9Tpax6u7gUMefiWTjYUUIzLLMHsSaP7xg=
 github.com/crgimenes/devengine v0.0.2/go.mod h1:+0H61Y32oZ9d6oiilNGZqd/X2cCRipSKqxYwM7JuW38=
+github.com/crgimenes/devengine v0.0.4 h1:Iu6j8xQpuibSato42qpu4q+OH35AvWT1Q7D/qftRYwk=
+github.com/crgimenes/devengine v0.0.4/go.mod h1:+0H61Y32oZ9d6oiilNGZqd/X2cCRipSKqxYwM7JuW38=
 github.com/crgimenes/filo v0.0.1 h1:PKWK1vZHPFclUWQTCAHpTAfNj2s49aze8jRZvWrfgLs=
 github.com/crgimenes/filo v0.0.1/go.mod h1:Ub5FxZ+EPBqCS7qav8/dYcFvoV+BFQgJTHZ0N6pUf4k=
 github.com/crgimenes/filo v0.0.2 h1:BEfeXeJMSjrhsMLesAUJw8UstGxIQaii4FQCVnIMdlo=
 github.com/crgimenes/filo v0.0.2/go.mod h1:sufepiY/dB66JPt2lK9TohBkLJ9rW6NlZeCGvf5ad8g=
 github.com/crgimenes/filo v0.0.3 h1:cNufbq5cmmJqVPcdotbcST1qHQDbl7hMXqiRvl4UPmI=
 github.com/crgimenes/filo v0.0.3/go.mod h1:sufepiY/dB66JPt2lK9TohBkLJ9rW6NlZeCGvf5ad8g=
+github.com/crgimenes/filo v0.0.4 h1:VaR8eV4DK8oWWY0HPdaeyzrvVJarTeDECp6MI5eIIa4=
+github.com/crgimenes/filo v0.0.4/go.mod h1:sufepiY/dB66JPt2lK9TohBkLJ9rW6NlZeCGvf5ad8g=
 github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY=
 github.com/dustin/go-humanize v1.0.1/go.mod h1:Mu1zIs6XwVuF/gI1OepvI0qD18qycQx+mFykh5fBlto=
 github.com/gomarkdown/markdown v0.0.0-20250810172220-2e2c11897d1a h1:l7A0loSszR5zHd/qK53ZIHMO8b3bBSmENnQ6eKnUT0A=
