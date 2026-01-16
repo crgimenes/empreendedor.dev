@@ -17,13 +17,13 @@ import (
 	"github.com/crgimenes/devengine/config"
 	"github.com/crgimenes/devengine/db"
 	"github.com/crgimenes/devengine/filemanager"
-	"github.com/crgimenes/filo"
 	"github.com/crgimenes/devengine/handlers"
 	"github.com/crgimenes/devengine/log"
 	"github.com/crgimenes/devengine/middleware"
 	"github.com/crgimenes/devengine/oauthproviders"
 	"github.com/crgimenes/devengine/session"
 	"github.com/crgimenes/devengine/templates"
+	"github.com/crgimenes/filo"
 
 	edevAssets "github.com/crgimenes/empreendedor.dev/assets"
 	"github.com/crgimenes/empreendedor.dev/migrations"
@@ -257,6 +257,41 @@ func main() {
 		n := session.BroadcastSSENotification(msg)
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		fmt.Fprintf(w, "sent to %d channels\n", n)
+	})
+
+	// Hello World endpoint - demonstrates application-specific handler
+	mux.HandleFunc("/hello", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		// Check for session - user may or may not be logged in
+		sid, ok := session.GetCookie(r)
+		u := db.User{}
+		authed := false
+		if ok {
+			got, ok := session.Get(sid)
+			if ok {
+				u, authed = got, true
+			}
+		}
+
+		data := struct {
+			Authed bool
+			User   db.User
+			Config config.Config
+		}{
+			Authed: authed,
+			User:   u,
+			Config: *config.Cfg,
+		}
+
+		err := templates.ExecuteTemplate(w, "hello.go.tmpl", data)
+		if err != nil {
+			log.Printf("Template error: %v", err)
+			http.Error(w, "template error", http.StatusInternalServerError)
+		}
 	})
 
 	// ------------------------------------------
