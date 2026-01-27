@@ -92,3 +92,8 @@ config.local.lua
 *.swp
 *.swo
 *~
+
+edev-darwin-arm64
+edev-freebsd-amd64
+edev-linux-amd64
+
