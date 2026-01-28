@@ -4,7 +4,7 @@ go 1.25
 
 require (
 	github.com/crgimenes/devengine v0.0.4
-	github.com/crgimenes/filo v0.0.4
+	github.com/crgimenes/filo v0.0.5
 )
 
 require (
