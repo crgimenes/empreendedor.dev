@@ -3,8 +3,8 @@ module github.com/crgimenes/empreendedor.dev
 go 1.26
 
 require (
-	github.com/crgimenes/devengine v0.0.4
-	github.com/crgimenes/filo v0.0.5
+	github.com/crgimenes/devengine v0.0.6
+	github.com/crgimenes/filo v0.0.6
 )
 
 require (
