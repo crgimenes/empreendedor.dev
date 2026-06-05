@@ -20,17 +20,38 @@ import (
 	"github.com/crgimenes/devengine/handlers"
 	"github.com/crgimenes/devengine/log"
 	"github.com/crgimenes/devengine/middleware"
-	"github.com/crgimenes/devengine/oauthproviders"
 	"github.com/crgimenes/devengine/session"
 	"github.com/crgimenes/devengine/templates"
 	"github.com/crgimenes/filo"
 
 	edevAssets "github.com/crgimenes/empreendedor.dev/assets"
+	"github.com/crgimenes/empreendedor.dev/mail"
 	"github.com/crgimenes/empreendedor.dev/migrations"
+	"github.com/crgimenes/empreendedor.dev/oauthproviders"
 	edevTemplates "github.com/crgimenes/empreendedor.dev/templates"
 )
 
-var GitTag = "dev" + time.Now().UTC().Format("-20060102-150405")
+var (
+	GitTag      = "dev" + time.Now().UTC().Format("-20060102-150405")
+	emailDomain string
+)
+
+func sendMagicLink(email, link string) error {
+	from := "noreply@" + strings.TrimPrefix(strings.TrimPrefix(emailDomain, "https://"), "http://")
+	id, err := mail.Send(mail.EmailRequest{
+		From:    from,
+		To:      []string{email},
+		Subject: "Seu link de acesso magico",
+		Text: "Clique no link para fazer login:\n\t" +
+			link +
+			"\n\nEste link expira em 15 minutos.\n--\n",
+	})
+	if err != nil {
+		return err
+	}
+	log.Printf("sent magic link email to %s, id=%s", email, id)
+	return nil
+}
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -76,11 +97,9 @@ func runFiloFile(name string) {
 	F.SetGlobal("DBFile", ifEmpty(
 		os.Getenv("EDEV_DB_FILE"), config.Cfg.DBFile))
 
-	F.SetGlobal("ResendAPIKey", ifEmpty(
-		os.Getenv("EDEV_RESEND_API_KEY"), config.Cfg.ResendAPIKey))
+	F.SetGlobal("ResendAPIKey", os.Getenv("EDEV_RESEND_API_KEY"))
 
-	F.SetGlobal("EmailDomain", ifEmpty(
-		os.Getenv("EDEV_EMAIL_DOMAIN"), config.Cfg.EmailDomain))
+	F.SetGlobal("EmailDomain", os.Getenv("EDEV_EMAIL_DOMAIN"))
 
 	F.SetGlobal("SiteTitle", ifEmpty(
 		os.Getenv("EDEV_SITE_TITLE"), config.Cfg.SiteTitle))
@@ -143,19 +162,24 @@ func runFiloFile(name string) {
 	config.Cfg.Addrs = F.MustGetString("Address")
 	config.Cfg.BaseURL = F.MustGetString("BaseURL")
 
-	config.Cfg.DiscordOAuthEnabled = F.MustGetBool("DiscordOAuthEnabled")
-	config.Cfg.DiscordClientID = F.MustGetString("DiscordClientID")
-	config.Cfg.DiscordClientSecret = F.MustGetString("DiscordClientSecret")
-
-	config.Cfg.GithubOAuthEnabled = F.MustGetBool("GithubOAuthEnabled")
-	config.Cfg.GitHubClientID = F.MustGetString("GitHubClientID")
-	config.Cfg.GitHubClientSecret = F.MustGetString("GitHubClientSecret")
+	oauthproviders.Setup(oauthproviders.Config{
+		Discord: oauthproviders.ProviderCreds{
+			Enabled:      F.MustGetBool("DiscordOAuthEnabled"),
+			ClientID:     F.MustGetString("DiscordClientID"),
+			ClientSecret: F.MustGetString("DiscordClientSecret"),
+		},
+		GitHub: oauthproviders.ProviderCreds{
+			Enabled:      F.MustGetBool("GithubOAuthEnabled"),
+			ClientID:     F.MustGetString("GitHubClientID"),
+			ClientSecret: F.MustGetString("GitHubClientSecret"),
+		},
+	})
 	config.Cfg.GitTag = F.MustGetString("GitTag")
 
 	config.Cfg.DBFile = F.MustGetString("DBFile")
 
-	config.Cfg.ResendAPIKey = F.MustGetString("ResendAPIKey")
-	config.Cfg.EmailDomain = F.MustGetString("EmailDomain")
+	mail.Setup(F.MustGetString("ResendAPIKey"))
+	emailDomain = F.MustGetString("EmailDomain")
 
 	if config.Cfg.BaseURL == "http://localhost:3210" ||
 		strings.HasPrefix(config.Cfg.BaseURL, "http://callisto:3210") {
@@ -229,6 +253,7 @@ func main() {
 			SaveMetadata: filemanager.SaveFileMetadata,
 			NewFilename:  filemanager.FileName,
 		},
+		MagicLinkSender: sendMagicLink,
 	})
 
 	mux := http.NewServeMux()
