@@ -14,6 +14,7 @@ import (
 	"github.com/crgimenes/devengine/api"
 	static "github.com/crgimenes/devengine/assets/static"
 	"github.com/crgimenes/devengine/auth"
+	"github.com/crgimenes/devengine/auth/basic"
 	"github.com/crgimenes/devengine/config"
 	"github.com/crgimenes/devengine/db"
 	"github.com/crgimenes/devengine/filemanager"
@@ -25,33 +26,11 @@ import (
 	"github.com/crgimenes/filo"
 
 	edevAssets "github.com/crgimenes/empreendedor.dev/assets"
-	"github.com/crgimenes/empreendedor.dev/mail"
 	"github.com/crgimenes/empreendedor.dev/migrations"
-	"github.com/crgimenes/empreendedor.dev/oauthproviders"
 	edevTemplates "github.com/crgimenes/empreendedor.dev/templates"
 )
 
-var (
-	GitTag      = "dev" + time.Now().UTC().Format("-20060102-150405")
-	emailDomain string
-)
-
-func sendMagicLink(email, link string) error {
-	from := "noreply@" + strings.TrimPrefix(strings.TrimPrefix(emailDomain, "https://"), "http://")
-	id, err := mail.Send(mail.EmailRequest{
-		From:    from,
-		To:      []string{email},
-		Subject: "Seu link de acesso magico",
-		Text: "Clique no link para fazer login:\n\t" +
-			link +
-			"\n\nEste link expira em 15 minutos.\n--\n",
-	})
-	if err != nil {
-		return err
-	}
-	log.Printf("sent magic link email to %s, id=%s", email, id)
-	return nil
-}
+var GitTag = "dev" + time.Now().UTC().Format("-20060102-150405")
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -86,20 +65,8 @@ func runFiloFile(name string) {
 	F.SetGlobal("BaseURL", ifEmpty(os.Getenv("EDEV_BASE_URL"), config.Cfg.BaseURL))
 	F.SetGlobal("Address", ifEmpty(os.Getenv("EDEV_ADDRESS"), config.Cfg.Addrs))
 
-	F.SetGlobal("DiscordOAuthEnabled", os.Getenv("EDEV_DISCORD_OAUTH_ENABLED") == "true")
-	F.SetGlobal("DiscordClientID", os.Getenv("EDEV_DISCORD_CLIENT_ID"))
-	F.SetGlobal("DiscordClientSecret", os.Getenv("EDEV_DISCORD_CLIENT_SECRET"))
-
-	F.SetGlobal("GithubOAuthEnabled", os.Getenv("EDEV_GITHUB_OAUTH_ENABLED") == "true")
-	F.SetGlobal("GitHubClientID", os.Getenv("EDEV_GITHUB_CLIENT_ID"))
-	F.SetGlobal("GitHubClientSecret", os.Getenv("EDEV_GITHUB_CLIENT_SECRET"))
-
 	F.SetGlobal("DBFile", ifEmpty(
 		os.Getenv("EDEV_DB_FILE"), config.Cfg.DBFile))
-
-	F.SetGlobal("ResendAPIKey", os.Getenv("EDEV_RESEND_API_KEY"))
-
-	F.SetGlobal("EmailDomain", os.Getenv("EDEV_EMAIL_DOMAIN"))
 
 	F.SetGlobal("SiteTitle", ifEmpty(
 		os.Getenv("EDEV_SITE_TITLE"), config.Cfg.SiteTitle))
@@ -162,24 +129,9 @@ func runFiloFile(name string) {
 	config.Cfg.Addrs = F.MustGetString("Address")
 	config.Cfg.BaseURL = F.MustGetString("BaseURL")
 
-	oauthproviders.Setup(oauthproviders.Config{
-		Discord: oauthproviders.ProviderCreds{
-			Enabled:      F.MustGetBool("DiscordOAuthEnabled"),
-			ClientID:     F.MustGetString("DiscordClientID"),
-			ClientSecret: F.MustGetString("DiscordClientSecret"),
-		},
-		GitHub: oauthproviders.ProviderCreds{
-			Enabled:      F.MustGetBool("GithubOAuthEnabled"),
-			ClientID:     F.MustGetString("GitHubClientID"),
-			ClientSecret: F.MustGetString("GitHubClientSecret"),
-		},
-	})
 	config.Cfg.GitTag = F.MustGetString("GitTag")
 
 	config.Cfg.DBFile = F.MustGetString("DBFile")
-
-	mail.Setup(F.MustGetString("ResendAPIKey"))
-	emailDomain = F.MustGetString("EmailDomain")
 
 	if config.Cfg.BaseURL == "http://localhost:3210" ||
 		strings.HasPrefix(config.Cfg.BaseURL, "http://callisto:3210") {
@@ -220,9 +172,9 @@ func main() {
 	go func() {
 		for {
 			time.Sleep(1 * time.Hour)
-			err := db.Storage.PurgeExpiredMagicLinkTokens()
+			err := db.Storage.PurgeExpiredTokens()
 			if err != nil {
-				log.Printf("Error purging expired magic link tokens: %v", err)
+				log.Printf("Error purging expired tokens: %v", err)
 			}
 		}
 	}()
@@ -253,19 +205,23 @@ func main() {
 			SaveMetadata: filemanager.SaveFileMetadata,
 			NewFilename:  filemanager.FileName,
 		},
-		MagicLinkSender: sendMagicLink,
 	})
+
+	// Basic auth: username + password + admin-generated invite links.
+	basicAuth := basic.New(config.Cfg, templates.ExecuteTemplate)
 
 	mux := http.NewServeMux()
 
-	// Rotas dos packages devengine
+	// Engine routes (no auth handlers — see basic.Routes below).
 	static.Routes(mux)
 	auth.Routes(mux)
-	oauthproviders.Routes(mux)
 	session.Routes(mux)
 	h.Routes(mux)
 	filemanager.Routes(mux)
 	api.Routes(mux)
+
+	// Application-chosen auth: basic (username+password+invite).
+	basicAuth.Routes(mux)
 
 	// Rotas específicas da aplicação
 	mux.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
