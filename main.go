@@ -17,6 +17,7 @@ import (
 	"github.com/crgimenes/devengine/auth/basic"
 	"github.com/crgimenes/devengine/config"
 	"github.com/crgimenes/devengine/db"
+	_ "github.com/crgimenes/devengine/eav/ui/defaults"
 	"github.com/crgimenes/devengine/filemanager"
 	"github.com/crgimenes/devengine/handlers"
 	"github.com/crgimenes/devengine/log"
