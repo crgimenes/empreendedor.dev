@@ -1,6 +1,6 @@
 module github.com/crgimenes/empreendedor.dev
 
-go 1.26
+go 1.27
 
 require (
 	github.com/crgimenes/devengine v0.0.6
