@@ -17,9 +17,11 @@ import (
 	"github.com/crgimenes/devengine/auth/basic"
 	"github.com/crgimenes/devengine/config"
 	"github.com/crgimenes/devengine/db"
+	"github.com/crgimenes/devengine/db/sqlite"
 	_ "github.com/crgimenes/devengine/eav/ui/defaults"
 	"github.com/crgimenes/devengine/filemanager"
 	"github.com/crgimenes/devengine/handlers"
+	"github.com/crgimenes/devengine/i18n"
 	"github.com/crgimenes/devengine/log"
 	"github.com/crgimenes/devengine/middleware"
 	"github.com/crgimenes/devengine/session"
@@ -117,6 +119,14 @@ func runFiloFile(name string) {
 	}
 
 	// Read the Filo file.
+	F.SetGlobal("RateLimitPerMin", config.Cfg.RateLimitPerMin)
+	F.SetGlobal("RateLimitBurst", config.Cfg.RateLimitBurst)
+	F.SetGlobal("RateLimitTrustProxy", config.Cfg.RateLimitTrustProxy)
+
+	F.SetGlobal("Locale", i18n.DefaultLocale)
+	F.SetGlobal("FileQuotaMB", config.Cfg.FileQuotaMB)
+	F.SetGlobal("LogJSON", false)
+
 	b, err := os.ReadFile(filepath.Clean(name))
 	if err != nil {
 		log.Fatal(err)
@@ -141,6 +151,14 @@ func runFiloFile(name string) {
 
 	config.Cfg.SiteTitle = F.MustGetString("SiteTitle")
 	config.Cfg.SiteDescription = F.MustGetString("SiteDescription")
+	config.Cfg.RateLimitPerMin = F.MustGetInt("RateLimitPerMin")
+	config.Cfg.RateLimitBurst = F.MustGetInt("RateLimitBurst")
+	config.Cfg.RateLimitTrustProxy = F.MustGetBool("RateLimitTrustProxy")
+	config.Cfg.FileQuotaMB = F.MustGetInt("FileQuotaMB")
+	if F.MustGetBool("LogJSON") {
+		log.SetJSON(true)
+	}
+	i18n.SetLocale(F.MustGetString("Locale"))
 
 }
 
@@ -157,15 +175,15 @@ func main() {
 
 	var err error
 
-	db.Storage, err = db.New()
+	db.Storage, err = sqlite.New()
 	if err != nil {
 		log.Fatalf("Error on db: %s", err)
 	}
 
 	// Configure application-specific migrations before running engine+app migrations
-	db.SetAppMigrationsFS(migrations.FS)
+	sqlite.SetAppMigrationsFS(migrations.FS)
 
-	err = db.RunMigration()
+	err = sqlite.RunMigration()
 	if err != nil {
 		log.Fatalf("Migration error: %v", err)
 	}
@@ -279,7 +297,7 @@ func main() {
 	// ------------------------------------------
 	srv := &http.Server{
 		Addr:              config.Cfg.Addrs,
-		Handler:           middleware.SecurityHeaders(mux),
+		Handler:           middleware.CSRFProtection(middleware.SecurityHeaders(mux)),
 		ReadHeaderTimeout: 5 * time.Second,
 		WriteTimeout:      0, // ***CRITICAL*** disable write timeout for long-lived connections (SSE)
 		IdleTimeout:       60 * time.Second,

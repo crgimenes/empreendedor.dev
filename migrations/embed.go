@@ -1,5 +1,5 @@
 // Package migrations embeds the application-specific migration files.
-// These are passed to db.SetAppMigrationsFS() before calling db.RunMigration().
+// These are passed to sqlite.SetAppMigrationsFS() before calling sqlite.RunMigration().
 //
 // Migration naming convention:
 //   - Use 4-digit prefix starting from 1000: 1000_name.up.sql, 1001_name.up.sql, etc.

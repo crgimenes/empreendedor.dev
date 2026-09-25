@@ -18,6 +18,7 @@ func TestEngineTemplatesStillWork(t *testing.T) {
 		"Authed": false,
 		"User":   nil,
 		"Error":  "",
+		"Locale": "en-US",
 	})
 
 	if err != nil {
