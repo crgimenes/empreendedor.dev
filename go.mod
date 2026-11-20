@@ -3,7 +3,7 @@ module github.com/crgimenes/empreendedor.dev
 go 1.27.4
 
 require (
-	github.com/crgimenes/devengine v0.0.14
+	github.com/crgimenes/devengine v0.0.15
 	github.com/crgimenes/filo v0.1.4
 )
 
